@@ -105,6 +105,29 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                 {registrationOpen ? 'Open' : 'Closed'}
               </button>
             </div>
+            <div className="bg-zinc-950 rounded-lg p-3 border border-zinc-800 flex justify-between items-center">
+              <span className="text-sm text-zinc-300 font-bold text-red-400">Danger Zone</span>
+              <button
+                onClick={async () => {
+                  if (confirm('Are you sure you want to reset the database? This will delete ALL users and messages.')) {
+                    try {
+                      const res = await fetch('/api/admin/reset-db', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                      });
+                      if (res.ok) {
+                        window.location.reload();
+                      }
+                    } catch (err) {
+                      console.error('Failed to reset database:', err);
+                    }
+                  }
+                }}
+                className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-xs font-bold uppercase transition-colors"
+              >
+                Reset DB
+              </button>
+            </div>
           </div>
 
           <form onSubmit={handleCreateUser} className="space-y-4">

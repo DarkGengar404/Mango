@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
-import { Users, Shield, LogOut, Settings, Mic, Volume2, MicOff, Headphones, PhoneOff, Signal, Monitor, Video, Citrus } from 'lucide-react';
+import { X, Users, Shield, LogOut, Settings, Mic, Volume2, MicOff, Headphones, PhoneOff, Signal, Monitor, Video, Citrus } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { UserSettings } from './UserSettings';
 import { UserContextMenu } from './UserContextMenu';
+import { UserProfileModal } from './UserProfileModal';
+import { sounds } from '../lib/sounds';
 
 function ConnectionTime({ joinedAt }: { joinedAt: number }) {
   const [time, setTime] = useState('00:00:00');
@@ -25,21 +27,23 @@ function ConnectionTime({ joinedAt }: { joinedAt: number }) {
   return <span className="text-[10px] text-zinc-500 font-mono ml-2">{time}</span>;
 }
 
-export function Sidebar({ onOpenScreenshare }: { onOpenScreenshare: (mode: 'screen' | 'camera') => void }) {
-  const { user, users, activeTab, setActiveTab, setUser, socket, inVoice, setInVoice, voiceUsers, isMuted, setIsMuted, isDeafened, setIsDeafened, ping, speakingUsers, voiceStates, onlineUsers, messages } = useStore();
+export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreenshare: (mode: 'screen' | 'camera') => void, onJoinScreenshare: (userId: number, mode: 'screen' | 'camera') => void }) {
+  const { user, users, activeTab, setActiveTab, setUser, socket, inVoice, setInVoice, voiceUsers, isMuted, setIsMuted, isDeafened, setIsDeafened, ping, speakingUsers, voiceStates, onlineUsers, messages, closedDMs, setClosedDMs, lastViewed, setLastViewed, videoStreams } = useStore();
   const [showSettings, setShowSettings] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ userId: number, x: number, y: number, isVoice?: boolean } | null>(null);
+  const [profileModalUserId, setProfileModalUserId] = useState<number | null>(null);
 
   const handleUserClick = (e: React.MouseEvent, userId: number, isVoice?: boolean) => {
     e.preventDefault();
     e.stopPropagation();
-    if (userId === user?.id) return;
     setContextMenu({ userId, x: e.clientX, y: e.clientY, isVoice });
   };
 
   const joinVoice = () => {
     if (!inVoice) {
       socket?.emit('join_voice');
+      socket?.emit('play_sound', 'join_voice');
+      sounds.playJoin();
       setInVoice(true);
     }
   };
@@ -47,6 +51,8 @@ export function Sidebar({ onOpenScreenshare }: { onOpenScreenshare: (mode: 'scre
   const leaveVoice = () => {
     if (inVoice) {
       socket?.emit('leave_voice');
+      socket?.emit('play_sound', 'leave_voice');
+      sounds.playLeave();
       setInVoice(false);
     }
   };
@@ -100,6 +106,7 @@ export function Sidebar({ onOpenScreenshare }: { onOpenScreenshare: (mode: 'scre
                 const vUser = users.find(u => u.id === vu.id);
                 if (!vUser) return null;
                 const isSpeaking = speakingUsers.includes(vu.id) && !voiceStates[vu.id]?.muted;
+                const userStream = videoStreams[vu.id];
                 return (
                   <div 
                     key={vu.id} 
@@ -117,6 +124,18 @@ export function Sidebar({ onOpenScreenshare }: { onOpenScreenshare: (mode: 'scre
                       <ConnectionTime joinedAt={vu.joinedAt} />
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      {userStream && vu.id !== user?.id && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onJoinScreenshare(vu.id, userStream);
+                          }}
+                          className="p-1 hover:bg-zinc-700 rounded text-emerald-400"
+                          title={`Watch ${userStream === 'screen' ? 'Stream' : 'Camera'}`}
+                        >
+                          {userStream === 'screen' ? <Monitor className="w-3 h-3" /> : <Video className="w-3 h-3" />}
+                        </button>
+                      )}
                       {voiceStates[vu.id]?.deafened && <Headphones className="w-3 h-3 text-red-400" />}
                       {voiceStates[vu.id]?.muted && !voiceStates[vu.id]?.deafened && <MicOff className="w-3 h-3 text-red-400" />}
                     </div>
@@ -132,44 +151,77 @@ export function Sidebar({ onOpenScreenshare }: { onOpenScreenshare: (mode: 'scre
           <div className="space-y-1">
             {users.filter(u => {
               if (u.id === user?.id) return false;
+              if (closedDMs.includes(u.id)) return false;
               // Show users we have messages with OR the currently active private chat
               const hasMessages = messages.some(m => m.from === u.id || m.to === u.id.toString());
               const isActive = activeTab === u.id.toString();
               return hasMessages || isActive;
+            }).sort((a, b) => {
+              // Sort by latest message
+              const aMsgs = messages.filter(m => m.from === a.id || m.to === a.id.toString());
+              const bMsgs = messages.filter(m => m.from === b.id || m.to === b.id.toString());
+              const aLatest = aMsgs.length > 0 ? aMsgs[aMsgs.length - 1].timestamp : 0;
+              const bLatest = bMsgs.length > 0 ? bMsgs[bMsgs.length - 1].timestamp : 0;
+              return bLatest - aLatest;
             }).map(u => {
               const isOnline = onlineUsers.includes(u.id);
+              const uMsgs = messages.filter(m => m.from === u.id || m.to === u.id.toString());
+              const lastViewedTime = lastViewed[u.id.toString()] || 0;
+              const unreadCount = uMsgs.filter(m => m.from === u.id && m.timestamp > lastViewedTime).length;
+              
               return (
-                <button
-                  key={u.id}
-                  onClick={() => setActiveTab(u.id.toString())}
-                  onContextMenu={(e) => handleUserClick(e, u.id)}
-                  className={twMerge(
-                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors group",
-                    activeTab === u.id.toString() ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
-                  )}
-                >
-                  <div className="relative shrink-0">
-                    <img 
-                      src={u.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`} 
-                      className="w-8 h-8 rounded-full bg-zinc-800" 
-                    />
-                    <div className={twMerge(
-                      "absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-zinc-950 rounded-full",
-                      isOnline ? "bg-emerald-500" : "bg-zinc-600"
-                    )} />
-                  </div>
-                  <div className="flex flex-col items-start min-w-0">
-                    <span 
-                      className="truncate w-full text-left"
-                      style={{ 
-                        color: u.color || undefined,
-                        textShadow: u.glow ? `0 0 8px ${u.color || '#fff'}` : 'none'
-                      }}
-                    >
-                      {u.displayName || u.username}
-                    </span>
-                  </div>
-                </button>
+                <div key={u.id} className="relative group">
+                  <button
+                    onClick={() => {
+                      setActiveTab(u.id.toString());
+                      setLastViewed(u.id.toString(), Date.now());
+                    }}
+                    onContextMenu={(e) => handleUserClick(e, u.id)}
+                    className={twMerge(
+                      "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                      activeTab === u.id.toString() ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
+                    )}
+                  >
+                    <div className="relative shrink-0">
+                      <img 
+                        src={u.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`} 
+                        className="w-8 h-8 rounded-full bg-zinc-800" 
+                      />
+                      <div className={twMerge(
+                        "absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-zinc-950 rounded-full",
+                        isOnline ? "bg-emerald-500" : "bg-zinc-600"
+                      )} />
+                    </div>
+                    <div className="flex flex-col items-start min-w-0 flex-1">
+                      <span 
+                        className={twMerge("truncate w-full text-left", unreadCount > 0 && activeTab !== u.id.toString() ? "font-bold text-white" : "")}
+                        style={{ 
+                          color: u.color || undefined,
+                          textShadow: u.glow ? `0 0 8px ${u.color || '#fff'}` : 'none'
+                        }}
+                      >
+                        {u.displayName || u.username}
+                      </span>
+                    </div>
+                    {unreadCount > 0 && activeTab !== u.id.toString() && (
+                      <div className="bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </div>
+                    )}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setClosedDMs([...closedDMs, u.id]);
+                      if (activeTab === u.id.toString()) {
+                        setActiveTab('main');
+                      }
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -193,11 +245,25 @@ export function Sidebar({ onOpenScreenshare }: { onOpenScreenshare: (mode: 'scre
               <button onClick={() => setIsDeafened(!isDeafened)} className={clsx("p-2 rounded-lg transition-colors", isDeafened ? "bg-red-500/20 text-red-400" : "hover:bg-zinc-800 text-zinc-400")}>
                 {isDeafened ? <Headphones className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
               </button>
-              <button onClick={() => onOpenScreenshare('screen')} className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 transition-colors" title="Share Screen">
-                <Monitor className="w-4 h-4" />
+              <button 
+                onClick={() => onOpenScreenshare('screen')} 
+                className={clsx(
+                  "p-2 rounded-lg transition-colors", 
+                  videoStreams[user?.id || 0] === 'screen' ? "bg-red-500 text-white" : "hover:bg-zinc-800 text-zinc-400"
+                )} 
+                title={videoStreams[user?.id || 0] === 'screen' ? "Stop Sharing" : "Share Screen"}
+              >
+                {videoStreams[user?.id || 0] === 'screen' ? <X className="w-4 h-4" /> : <Monitor className="w-4 h-4" />}
               </button>
-              <button onClick={() => onOpenScreenshare('camera')} className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 transition-colors" title="Share Camera">
-                <Video className="w-4 h-4" />
+              <button 
+                onClick={() => onOpenScreenshare('camera')} 
+                className={clsx(
+                  "p-2 rounded-lg transition-colors", 
+                  videoStreams[user?.id || 0] === 'camera' ? "bg-red-500 text-white" : "hover:bg-zinc-800 text-zinc-400"
+                )} 
+                title={videoStreams[user?.id || 0] === 'camera' ? "Stop Sharing" : "Share Camera"}
+              >
+                {videoStreams[user?.id || 0] === 'camera' ? <X className="w-4 h-4" /> : <Video className="w-4 h-4" />}
               </button>
             </div>
             <button onClick={leaveVoice} className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors">
@@ -242,7 +308,15 @@ export function Sidebar({ onOpenScreenshare }: { onOpenScreenshare: (mode: 'scre
           userId={contextMenu.userId} 
           position={{ x: contextMenu.x, y: contextMenu.y }} 
           isVoiceContext={contextMenu.isVoice}
+          onOpenProfile={() => setProfileModalUserId(contextMenu.userId)}
           onClose={() => setContextMenu(null)} 
+        />
+      )}
+
+      {profileModalUserId && (
+        <UserProfileModal 
+          userId={profileModalUserId} 
+          onClose={() => setProfileModalUserId(null)} 
         />
       )}
     </div>

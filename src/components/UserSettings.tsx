@@ -10,6 +10,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
   const [color, setColor] = useState(user?.color || '#ffffff');
   const [glow, setGlow] = useState(user?.glow || false);
+  const [bio, setBio] = useState(user?.bio || '');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -30,7 +31,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ display_name: displayName, avatar_url: avatarUrl, color, glow })
+        body: JSON.stringify({ display_name: displayName, avatar_url: avatarUrl, color, glow, bio })
       });
 
       const contentType = res.headers.get('content-type');
@@ -56,7 +57,8 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
           displayName,
           avatar_url: avatarUrl,
           color,
-          glow
+          glow,
+          bio
         } : null
       }));
 
@@ -125,6 +127,16 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                       onChange={(e) => setAvatarUrl(e.target.value)}
                       placeholder="https://example.com/avatar.png"
                       className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">Bio (Optional)</label>
+                    <textarea
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value)}
+                      placeholder="Tell us about yourself..."
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none h-24"
                     />
                   </div>
                   

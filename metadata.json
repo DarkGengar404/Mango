@@ -1,5 +1,5 @@
 {
   "name": "Mango",
   "description": "",
-  "requestFramePermissions": ["camera", "microphone"]
+  "requestFramePermissions": ["camera", "microphone", "display-capture"]
 }

@@ -5,12 +5,14 @@ import { Send, Users, Shield, Monitor, Mic, Video, Citrus } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { UserContextMenu } from './UserContextMenu';
+import { UserProfileModal } from './UserProfileModal';
 
 export function Chat() {
   const { user, token, users, messages, activeTab, socket, keyPair, sharedSecrets, mainRoomKey, setSharedSecret, setMainRoomKey, setActiveTab, addMessage } = useStore();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<{ userId: number, x: number, y: number } | null>(null);
+  const [profileModalUserId, setProfileModalUserId] = useState<number | null>(null);
 
   const handleUserClick = (e: React.MouseEvent, userId: number) => {
     e.preventDefault();
@@ -24,16 +26,27 @@ export function Chat() {
   }, [messages, activeTab]);
 
   // Derive shared secrets for all users
+  const derivedPublicKeys = useRef<Record<number, string>>({});
+  const sentMainKeyTo = useRef<Set<number>>(new Set());
+
   useEffect(() => {
     if (!keyPair || !users.length) return;
 
     const deriveKeys = async () => {
       for (const u of users) {
-        if (u.id === user?.id || !u.publicKey || sharedSecrets[u.id]) continue;
+        const pubKeyStr = u.public_key || u.publicKey;
+        if (u.id === user?.id || !pubKeyStr) continue;
+        
+        // Skip if we already derived the key for THIS specific public key string
+        if (sharedSecrets[u.id] && derivedPublicKeys.current[u.id] === pubKeyStr) continue;
+
         try {
-          const pubKey = await importPublicKey(u.publicKey);
+          const pubKey = await importPublicKey(pubKeyStr);
           const shared = await deriveSharedSecret(keyPair.privateKey, pubKey);
           setSharedSecret(u.id, shared);
+          derivedPublicKeys.current[u.id] = pubKeyStr;
+          // If the key changed, we need to resend the main key
+          sentMainKeyTo.current.delete(u.id);
         } catch (e) {
           console.error('Failed to derive key for user', u.id, e);
         }
@@ -41,8 +54,6 @@ export function Chat() {
     };
     deriveKeys();
   }, [users, keyPair, user, sharedSecrets, setSharedSecret]);
-
-  const sentMainKeyTo = useRef<Set<number>>(new Set());
 
   // Admin setup and distribution of main room key
   useEffect(() => {
@@ -196,8 +207,8 @@ export function Chat() {
                     onClick={() => msg.from !== user?.id && setActiveTab(msg.from.toString())}
                     onContextMenu={(e) => msg.from !== user?.id && handleUserClick(e, msg.from)}
                     style={{ 
-                      color: color || (isMe ? '#818cf8' : '#34d399'),
-                      textShadow: glow ? `0 0 8px ${color || (isMe ? '#818cf8' : '#34d399')}` : 'none'
+                      color: color || '#ffffff',
+                      textShadow: glow ? `0 0 8px ${color || '#ffffff'}` : 'none'
                     }}
                   >
                     {senderName}
@@ -221,6 +232,17 @@ export function Chat() {
           userId={contextMenu.userId} 
           position={{ x: contextMenu.x, y: contextMenu.y }} 
           onClose={() => setContextMenu(null)} 
+          onOpenProfile={() => {
+            setProfileModalUserId(contextMenu.userId);
+            setContextMenu(null);
+          }}
+        />
+      )}
+
+      {profileModalUserId && (
+        <UserProfileModal 
+          userId={profileModalUserId} 
+          onClose={() => setProfileModalUserId(null)} 
         />
       )}
 

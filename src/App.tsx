@@ -9,11 +9,21 @@ import { Screenshare } from './components/Screenshare';
 import { VoiceManager } from './components/VoiceManager';
 import { io } from 'socket.io-client';
 import { decryptMessage, importSymmetricKey } from './lib/crypto';
+import { loadKeyPair } from './lib/db';
+import { sounds } from './lib/sounds';
 
 export default function App() {
-  const { user, token, users, setUsers, socket, setSocket, addMessage, keyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState } = useStore();
+  const { user, token, users, setUsers, socket, setSocket, addMessage, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice } = useStore();
   const [showAdmin, setShowAdmin] = useState(false);
-  const [showScreenshare, setShowScreenshare] = useState<{ show: boolean, mode: 'screen' | 'camera' }>({ show: false, mode: 'screen' });
+  const [showScreenshare, setShowScreenshare] = useState<{ show: boolean, mode: 'screen' | 'camera', targetUserId?: number, stream?: MediaStream }>({ show: false, mode: 'screen' });
+
+  useEffect(() => {
+    if (!keyPair) {
+      loadKeyPair().then(kp => {
+        if (kp) setKeyPair(kp);
+      });
+    }
+  }, [keyPair]);
 
   useEffect(() => {
     if (!token || !user) return;
@@ -71,6 +81,46 @@ export default function App() {
       setVoiceState(data.userId, data.state);
     });
 
+    socketInstance.on('video_streams', (streamsArr: [number, 'screen' | 'camera'][]) => {
+      const streams: Record<number, 'screen' | 'camera'> = {};
+      for (const [id, mode] of streamsArr) {
+        streams[id] = mode;
+      }
+      setVideoStreams(streams);
+    });
+
+    socketInstance.on('video_stream_update', (data: { userId: number, mode: 'screen' | 'camera' | null }) => {
+      setVideoStream(data.userId, data.mode);
+    });
+
+    socketInstance.on('stream_viewers', (viewersArr: [number, number[]][]) => {
+      const viewers: Record<number, number[]> = {};
+      for (const [id, ids] of viewersArr) {
+        viewers[id] = ids;
+      }
+      setStreamViewers(viewers);
+    });
+
+    socketInstance.on('stream_viewers_update', (data: { streamUserId: number, viewerIds: number[] }) => {
+      setStreamViewer(data.streamUserId, data.viewerIds);
+    });
+
+    socketInstance.on('broadcast_sound', (data: { userId: number, soundType: string }) => {
+      switch (data.soundType) {
+        case 'join_voice': sounds.playJoin(); break;
+        case 'leave_voice': sounds.playLeave(); break;
+        case 'start_share': sounds.playStartShare(); break;
+        case 'stop_share': sounds.playStopShare(); break;
+        case 'join_stream': sounds.playJoinStream(); break;
+        case 'leave_stream': sounds.playLeaveStream(); break;
+      }
+    });
+
+    socketInstance.on('disconnect', () => {
+      setInVoice(false);
+      setShowScreenshare({ show: false, mode: 'screen' });
+    });
+
     setSocket(socketInstance);
 
     return () => {
@@ -126,17 +176,85 @@ export default function App() {
     };
   }, [socket, keyPair, sharedSecrets, mainRoomKey]);
 
+  useEffect(() => {
+    if (!inVoice && showScreenshare.show && !showScreenshare.targetUserId) {
+      // If we were sharing our own screen/camera and left voice, stop it
+      setShowScreenshare({ show: false, mode: 'screen' });
+    }
+  }, [inVoice]);
+
   if (!user) {
     return <Auth />;
   }
 
   return (
     <div className="flex h-screen bg-zinc-950 text-white overflow-hidden">
-      <Sidebar onOpenScreenshare={(mode) => setShowScreenshare({ show: true, mode })} />
+      <Sidebar 
+        onOpenScreenshare={async (mode) => {
+          const currentMode = useStore.getState().videoStreams[user?.id || 0];
+          
+          if (currentMode === mode) {
+            // Stop sharing
+            setShowScreenshare({ show: false, mode: 'screen' });
+            return;
+          }
+
+          // Mutual exclusivity: stop previous if exists
+          if (currentMode) {
+            setShowScreenshare({ show: false, mode: 'screen' });
+            // Small delay to ensure cleanup
+            await new Promise(r => setTimeout(r, 100));
+          }
+          
+          try {
+            const stream = mode === 'screen' 
+              ? await navigator.mediaDevices.getDisplayMedia({
+                  video: {
+                    displaySurface: 'monitor',
+                    frameRate: 30,
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                  },
+                  audio: true
+                })
+              : await navigator.mediaDevices.getUserMedia({
+                  video: {
+                    frameRate: 30,
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                  },
+                  audio: true
+                });
+            
+            if (stream) {
+              setShowScreenshare({ show: true, mode, stream });
+            }
+          } catch (e: any) {
+            if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') {
+              console.error('Failed to get media', e);
+            }
+          }
+        }} 
+        onJoinScreenshare={(userId, mode) => {
+          if (showScreenshare.show && showScreenshare.targetUserId === userId) {
+            setShowScreenshare({ show: false, mode: 'screen' });
+          } else {
+            setShowScreenshare({ show: true, mode, targetUserId: userId });
+          }
+        }}
+      />
       <div className="flex-1 flex flex-col relative">
         <Chat />
       </div>
-      <RightSidebar />
+      <RightSidebar 
+        onJoinScreenshare={(userId, mode) => {
+          if (showScreenshare.show && showScreenshare.targetUserId === userId) {
+            setShowScreenshare({ show: false, mode: 'screen' });
+          } else {
+            setShowScreenshare({ show: true, mode, targetUserId: userId });
+          }
+        }}
+      />
       
       {user.isAdmin && (
         <button
@@ -148,7 +266,7 @@ export default function App() {
       )}
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
-      {showScreenshare.show && <Screenshare mode={showScreenshare.mode} onClose={() => setShowScreenshare({ show: false, mode: 'screen' })} />}
+      {showScreenshare.show && <Screenshare mode={showScreenshare.mode} targetUserId={showScreenshare.targetUserId} stream={showScreenshare.stream} onClose={() => setShowScreenshare({ show: false, mode: 'screen' })} />}
       <VoiceManager />
     </div>
   );

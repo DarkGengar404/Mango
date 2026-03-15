@@ -3,8 +3,8 @@ import { useStore } from '../store';
 import { MessageSquare, MicOff, Volume2, User as UserIcon } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 
-export function UserContextMenu({ userId, onClose, position, isVoiceContext }: { userId: number, onClose: () => void, position: { x: number, y: number }, isVoiceContext?: boolean }) {
-  const { users, setActiveTab, localMutes, setLocalMute, localVolumes, setLocalVolume } = useStore();
+export function UserContextMenu({ userId, onClose, position, isVoiceContext, onOpenProfile }: { userId: number, onClose: () => void, position: { x: number, y: number }, isVoiceContext?: boolean, onOpenProfile?: () => void }) {
+  const { users, setActiveTab, localMutes, setLocalMute, localVolumes, setLocalVolume, user: currentUser } = useStore();
   const menuRef = useRef<HTMLDivElement>(null);
   
   const user = users.find(u => u.id === userId);
@@ -64,20 +64,22 @@ export function UserContextMenu({ userId, onClose, position, isVoiceContext }: {
       </div>
 
       <div className="p-1">
-        <button 
-          onClick={() => {
-            setActiveTab(userId.toString());
-            onClose();
-          }}
-          className="w-full flex items-center gap-3 px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-orange-600 rounded-md transition-colors"
-        >
-          <MessageSquare className="w-4 h-4" />
-          Message
-        </button>
+        {currentUser?.id !== userId && (
+          <button 
+            onClick={() => {
+              setActiveTab(userId.toString());
+              onClose();
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-orange-600 rounded-md transition-colors"
+          >
+            <MessageSquare className="w-4 h-4" />
+            Message
+          </button>
+        )}
         
         <button 
           onClick={() => {
-            // Profile view could be implemented here
+            if (onOpenProfile) onOpenProfile();
             onClose();
           }}
           className="w-full flex items-center gap-3 px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"

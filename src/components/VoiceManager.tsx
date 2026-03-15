@@ -59,10 +59,20 @@ export function VoiceManager() {
         audioContextRef.current = audioCtx;
 
         const source = audioCtx.createMediaStreamSource(stream);
+        
+        // Add a compressor to help with noise floor and leveling
+        const compressor = audioCtx.createDynamicsCompressor();
+        compressor.threshold.setValueAtTime(-50, audioCtx.currentTime);
+        compressor.knee.setValueAtTime(40, audioCtx.currentTime);
+        compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
+        compressor.attack.setValueAtTime(0, audioCtx.currentTime);
+        compressor.release.setValueAtTime(0.25, audioCtx.currentTime);
+
         const processor = audioCtx.createScriptProcessor(4096, 1, 1);
         processorRef.current = processor;
 
-        source.connect(processor);
+        source.connect(compressor);
+        compressor.connect(processor);
         processor.connect(audioCtx.destination);
 
         processor.onaudioprocess = (e) => {
@@ -78,11 +88,16 @@ export function VoiceManager() {
           for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
           const rms = Math.sqrt(sum / inputData.length);
           
-          // Simple gate based on noise suppression level
+          // Improved gate logic
           // Higher suppression = higher threshold
-          const threshold = 0.005 + (suppression * 0.05);
+          // We use a logarithmic scale for more natural feel
+          const threshold = 0.001 * Math.pow(10, suppression * 2); // 0.001 to 0.1
           
-          if (rms < threshold) return; // Gate closed
+          if (rms < threshold) {
+            // Send silence if below threshold to keep stream alive but quiet
+            // Or just return to save bandwidth
+            return; 
+          }
           if (user) handleSpeak(user.id);
 
           // Convert Float32Array to Int16Array for smaller payload

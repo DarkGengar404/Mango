@@ -1,17 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
 import { generateKeyPair, exportPublicKey } from '../lib/crypto';
+import { loadKeyPair, saveKeyPair } from '../lib/db';
 import { Citrus } from 'lucide-react';
 
 export function Auth() {
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [confirmEmail, setConfirmEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isSignup, setIsSignup] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [resetToken, setResetToken] = useState('');
   const [registrationOpen, setRegistrationOpen] = useState(true);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const { setUser, setKeyPair } = useStore();
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetch('/api/settings')
       .then(res => res.json())
       .then(data => setRegistrationOpen(data.registrationOpen))
@@ -21,16 +28,68 @@ export function Auth() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setMessage('');
+
+    if (isSignup) {
+      if (email !== confirmEmail) {
+        setError('Emails do not match');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match');
+        return;
+      }
+    }
+
+    if (isForgotPassword) {
+      // ... (rest of forgot password logic)
+      if (resetToken) {
+        try {
+          const res = await fetch('/api/auth/reset-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: resetToken, password }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Reset failed');
+          setMessage('Password reset successful! You can now log in.');
+          setIsForgotPassword(false);
+          setResetToken('');
+        } catch (err: any) {
+          setError(err.message);
+        }
+      } else {
+        try {
+          const res = await fetch('/api/auth/request-reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email }),
+          });
+          const data = await res.json();
+          setMessage(data.message);
+          if (data.debugToken) {
+            console.log('DEBUG: Reset token is', data.debugToken);
+          }
+        } catch (err: any) {
+          setError(err.message);
+        }
+      }
+      return;
+    }
 
     try {
-      const keyPair = await generateKeyPair();
+      let keyPair = await loadKeyPair();
+      if (!keyPair) {
+        keyPair = await generateKeyPair();
+        await saveKeyPair(keyPair);
+      }
       setKeyPair(keyPair);
       const publicKey = await exportPublicKey(keyPair.publicKey);
 
       const res = await fetch('/api/auth/enter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, publicKey, isSignup }),
+        body: JSON.stringify({ username, email, password, publicKey, isSignup }),
       });
 
       const contentType = res.headers.get('content-type');
@@ -72,46 +131,131 @@ export function Auth() {
           </div>
         )}
 
+        {message && (
+          <div className="bg-emerald-500/10 border border-emerald-500/50 text-emerald-400 p-3 rounded-lg mb-6 text-sm">
+            {message}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">Username</label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
-              required
-            />
-          </div>
+          {!isForgotPassword && (
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-1">Username</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                required={!isForgotPassword}
+              />
+            </div>
+          )}
+
+          {(isSignup || isForgotPassword) && (
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-1">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                required
+              />
+            </div>
+          )}
+
+          {isSignup && (
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-1">Confirm Email</label>
+              <input
+                type="email"
+                value={confirmEmail}
+                onChange={(e) => setConfirmEmail(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                required
+              />
+            </div>
+          )}
+
+          {isForgotPassword && resetToken && (
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-1">Reset Token</label>
+              <input
+                type="text"
+                value={resetToken}
+                onChange={(e) => setResetToken(e.target.value)}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                required
+              />
+            </div>
+          )}
+
+          {(!isForgotPassword || resetToken) && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-zinc-400 mb-1">
+                  {isForgotPassword ? 'New Password' : 'Password'}
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  required
+                />
+              </div>
+              {isSignup && (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    required
+                  />
+                </div>
+              )}
+            </>
+          )}
           
           <button
             type="submit"
             className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-medium py-2.5 rounded-lg transition-colors mt-6 shadow-lg shadow-orange-500/20"
           >
-            {isSignup ? 'Create Account' : 'Enter Mango'}
+            {isForgotPassword ? (resetToken ? 'Reset Password' : 'Send Reset Link') : (isSignup ? 'Create Account' : 'Enter Mango')}
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => setIsSignup(!isSignup)}
-            className="text-sm text-zinc-400 hover:text-orange-500 transition-colors"
-          >
-            {isSignup ? 'Already have an account? Log in' : 'Don\'t have an account? Sign up'}
-          </button>
+        <div className="mt-6 flex flex-col gap-2 text-center">
+          {!isForgotPassword && (
+            <button
+              onClick={() => {
+                setIsSignup(!isSignup);
+                setError('');
+                setMessage('');
+              }}
+              className="text-sm text-zinc-400 hover:text-orange-500 transition-colors"
+            >
+              {isSignup ? 'Already have an account? Log in' : 'Don\'t have an account? Sign up'}
+            </button>
+          )}
+          
+          {!isSignup && (
+            <button
+              onClick={() => {
+                setIsForgotPassword(!isForgotPassword);
+                setError('');
+                setMessage('');
+              }}
+              className="text-sm text-zinc-400 hover:text-orange-500 transition-colors"
+            >
+              {isForgotPassword ? 'Back to login' : 'Forgot password?'}
+            </button>
+          )}
         </div>
 
-        {!registrationOpen && !isSignup && (
+        {!registrationOpen && !isSignup && !isForgotPassword && (
           <p className="mt-4 text-xs text-center text-zinc-500">
             Registration is currently closed.
           </p>
