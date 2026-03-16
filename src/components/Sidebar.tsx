@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
-import { X, Users, Shield, LogOut, Settings, Mic, Volume2, MicOff, Headphones, PhoneOff, Signal, Monitor, Video } from 'lucide-react';
+import { X, Users, Shield, LogOut, Settings, Mic, Volume2, MicOff, Headphones, PhoneOff, Signal, Monitor, Video, Zap } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { UserSettings } from './UserSettings';
@@ -58,15 +58,11 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
   };
 
   return (
-    <div className="w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col h-screen">
-      <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+    <div className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col h-screen">
+      <div className="p-4 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20">
-            <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2C12 2 10 6 10 10C10 14 12 18 12 22C12 18 14 14 14 10C14 6 12 2 12 2Z" fill="currentColor"/>
-              <path d="M14 4C14 4 12 8 12 12C12 16 14 20 14 24C14 20 16 16 16 12C16 8 14 4 14 4Z" fill="currentColor" opacity="0.7"/>
-              <path d="M10 4C10 4 8 8 8 12C8 16 10 20 10 24C10 20 12 16 12 12C12 8 10 4 10 4Z" fill="currentColor" opacity="0.7"/>
-            </svg>
+          <div className="w-8 h-8 bg-gradient-to-br from-cyan-400 to-fuchsia-600 rounded-lg flex items-center justify-center shadow-lg shadow-fuchsia-500/20">
+            <Zap className="w-5 h-5 text-white" />
           </div>
           <span className="font-bold text-white tracking-tight text-lg">Aurora</span>
         </div>

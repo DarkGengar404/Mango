@@ -67,7 +67,10 @@ export function VoiceManager() {
         });
         setLocalStream(stream);
 
-        const audioCtx = new AudioContext();
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
+        }
         audioContextRef.current = audioCtx;
 
         await audioCtx.audioWorklet.addModule('/audio-processor.js');

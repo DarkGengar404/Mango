@@ -14,7 +14,7 @@ import { loadKeyPair } from './lib/db';
 import { sounds } from './lib/sounds';
 
 export default function App() {
-  const { user, token, users, setUsers, socket, setSocket, addMessage, setMessages, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice, activeTab, setPeerConnection, peerConnections, setLocalScreenStream } = useStore();
+  const { user, token, users, setUsers, socket, setSocket, addMessage, setMessages, addMessages, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice, activeTab, setPeerConnection, peerConnections, setLocalScreenStream, localScreenStream, screenshareSettings } = useStore();
   const [showAdmin, setShowAdmin] = useState(false);
   const [showScreenshare, setShowScreenshare] = useState<{ show: boolean, mode: 'screen' | 'camera', targetUserId?: number }>({ show: false, mode: 'screen' });
 
@@ -77,7 +77,7 @@ export default function App() {
               });
             }
           }
-          setMessages(history);
+          addMessages(history);
         }
       } catch (e) {
         console.error('Failed to fetch history:', e);
@@ -257,12 +257,30 @@ export default function App() {
     }
   }, [inVoice]);
 
+  useEffect(() => {
+    if (!localScreenStream) return;
+    
+    const videoTrack = localScreenStream.getVideoTracks()[0];
+    if (videoTrack) {
+      const constraints: MediaTrackConstraints = {};
+      if (screenshareSettings.quality === '1080p') {
+        constraints.width = { ideal: 1920 };
+        constraints.height = { ideal: 1080 };
+      } else if (screenshareSettings.quality === '720p') {
+        constraints.width = { ideal: 1280 };
+        constraints.height = { ideal: 720 };
+      }
+      constraints.frameRate = screenshareSettings.fps;
+      videoTrack.applyConstraints(constraints).catch(console.error);
+    }
+  }, [screenshareSettings, localScreenStream]);
+
   if (!user) {
     return <Auth />;
   }
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-white overflow-hidden">
+    <div className="flex h-screen bg-slate-950 text-white overflow-hidden">
       <Sidebar 
         onOpenScreenshare={async (mode) => {
           const currentMode = useStore.getState().videoStreams[user?.id || 0];

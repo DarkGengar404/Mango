@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
+import { Zap } from 'lucide-react';
 import { generateKeyPair, exportPublicKey } from '../lib/crypto';
 import { loadKeyPair, saveKeyPair } from '../lib/db';
 
@@ -112,15 +113,11 @@ export function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-800 p-8">
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 p-8">
         <div className="flex justify-center mb-6">
-          <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center">
-            <svg viewBox="0 0 24 24" className="w-8 h-8 text-emerald-500" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2C12 2 10 6 10 10C10 14 12 18 12 22C12 18 14 14 14 10C14 6 12 2 12 2Z" fill="currentColor"/>
-              <path d="M14 4C14 4 12 8 12 12C12 16 14 20 14 24C14 20 16 16 16 12C16 8 14 4 14 4Z" fill="currentColor" opacity="0.7"/>
-              <path d="M10 4C10 4 8 8 8 12C8 16 10 20 10 24C10 20 12 16 12 12C12 8 10 4 10 4Z" fill="currentColor" opacity="0.7"/>
-            </svg>
+          <div className="w-16 h-16 bg-cyan-500/20 rounded-full flex items-center justify-center">
+            <Zap className="w-8 h-8 text-cyan-500" />
           </div>
         </div>
         

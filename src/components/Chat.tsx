@@ -137,14 +137,14 @@ export function Chat() {
   const isKeyReady = !!currentKey;
 
   return (
-    <div className="flex-1 flex flex-col bg-zinc-900">
+    <div className="flex-1 flex flex-col bg-slate-900">
       {/* Header */}
-      <div className="h-16 border-b border-zinc-800 flex items-center px-6 justify-between bg-zinc-950/50">
+      <div className="h-16 border-b border-slate-800 flex items-center px-6 justify-between bg-slate-950/50">
         <div className="flex items-center gap-3">
           {activeTab === 'main' ? (
-            <Users className="w-5 h-5 text-zinc-400" />
+            <Users className="w-5 h-5 text-slate-400" />
           ) : (
-            <Shield className="w-5 h-5 text-emerald-400" />
+            <Shield className="w-5 h-5 text-cyan-400" />
           )}
           <h2 className="text-lg font-semibold text-white">
             {activeTab === 'main' ? 'Main Room' : users.find(u => u.id.toString() === activeTab)?.displayName || users.find(u => u.id.toString() === activeTab)?.username}
