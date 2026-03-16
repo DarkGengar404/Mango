@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
-import { X, Users, Shield, LogOut, Settings, Mic, Volume2, MicOff, Headphones, PhoneOff, Signal, Monitor, Video, Citrus } from 'lucide-react';
+import { X, Users, Shield, LogOut, Settings, Mic, Volume2, MicOff, Headphones, PhoneOff, Signal, Monitor, Video } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { UserSettings } from './UserSettings';
@@ -61,10 +61,14 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
     <div className="w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col h-screen">
       <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-amber-600 rounded-lg flex items-center justify-center shadow-lg shadow-orange-500/20">
-            <Citrus className="w-5 h-5 text-white" />
+          <div className="w-8 h-8 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20">
+            <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C12 2 10 6 10 10C10 14 12 18 12 22C12 18 14 14 14 10C14 6 12 2 12 2Z" fill="currentColor"/>
+              <path d="M14 4C14 4 12 8 12 12C12 16 14 20 14 24C14 20 16 16 16 12C16 8 14 4 14 4Z" fill="currentColor" opacity="0.7"/>
+              <path d="M10 4C10 4 8 8 8 12C8 16 10 20 10 24C10 20 12 16 12 12C12 8 10 4 10 4Z" fill="currentColor" opacity="0.7"/>
+            </svg>
           </div>
-          <span className="font-bold text-white tracking-tight text-lg">Mango</span>
+          <span className="font-bold text-white tracking-tight text-lg">Aurora</span>
         </div>
       </div>
 
@@ -89,7 +93,7 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
             onClick={joinVoice}
             className={twMerge(
               "w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-              inVoice ? "bg-emerald-500/10 text-emerald-400" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
+              inVoice ? "bg-indigo-500/10 text-indigo-400" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
             )}
           >
             <div className="flex items-center gap-3">
@@ -114,7 +118,7 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
                     className="flex items-center justify-between px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800/50 rounded-md cursor-pointer transition-colors"
                   >
                     <div className="flex items-center gap-2 overflow-hidden">
-                      <img src={vUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${vUser.username}`} className={twMerge("w-5 h-5 rounded-full bg-zinc-800 transition-all shrink-0", isSpeaking ? "ring-2 ring-emerald-500" : "")} />
+                      <img src={vUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${vUser.username}`} className={twMerge("w-5 h-5 rounded-full bg-zinc-800 transition-all shrink-0", isSpeaking ? "ring-2 ring-indigo-500" : "")} />
                       <span 
                         className={twMerge("truncate", isSpeaking ? "text-white" : "")}
                         style={{ color: vUser.color || undefined, textShadow: vUser.glow ? `0 0 8px ${vUser.color || '#fff'}` : 'none' }}
@@ -153,19 +157,19 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
               if (u.id === user?.id) return false;
               if (closedDMs.includes(u.id)) return false;
               // Show users we have messages with OR the currently active private chat
-              const hasMessages = messages.some(m => m.from === u.id || m.to === u.id.toString());
+              const hasMessages = messages.some(m => m.to !== 'main' && ((m.from === u.id && m.to.toString() === user?.id.toString()) || (m.from === user?.id && m.to.toString() === u.id.toString())));
               const isActive = activeTab === u.id.toString();
               return hasMessages || isActive;
             }).sort((a, b) => {
               // Sort by latest message
-              const aMsgs = messages.filter(m => m.from === a.id || m.to === a.id.toString());
-              const bMsgs = messages.filter(m => m.from === b.id || m.to === b.id.toString());
+              const aMsgs = messages.filter(m => m.to !== 'main' && ((m.from === a.id && m.to.toString() === user?.id.toString()) || (m.from === user?.id && m.to.toString() === a.id.toString())));
+              const bMsgs = messages.filter(m => m.to !== 'main' && ((m.from === b.id && m.to.toString() === user?.id.toString()) || (m.from === user?.id && m.to.toString() === b.id.toString())));
               const aLatest = aMsgs.length > 0 ? aMsgs[aMsgs.length - 1].timestamp : 0;
               const bLatest = bMsgs.length > 0 ? bMsgs[bMsgs.length - 1].timestamp : 0;
               return bLatest - aLatest;
             }).map(u => {
               const isOnline = onlineUsers.includes(u.id);
-              const uMsgs = messages.filter(m => m.from === u.id || m.to === u.id.toString());
+              const uMsgs = messages.filter(m => m.to !== 'main' && ((m.from === u.id && m.to.toString() === user?.id.toString()) || (m.from === user?.id && m.to.toString() === u.id.toString())));
               const lastViewedTime = lastViewed[u.id.toString()] || 0;
               const unreadCount = uMsgs.filter(m => m.from === u.id && m.timestamp > lastViewedTime).length;
               
@@ -189,7 +193,7 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
                       />
                       <div className={twMerge(
                         "absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-zinc-950 rounded-full",
-                        isOnline ? "bg-emerald-500" : "bg-zinc-600"
+                        isOnline ? "bg-indigo-500" : "bg-zinc-600"
                       )} />
                     </div>
                     <div className="flex flex-col items-start min-w-0 flex-1">
@@ -204,7 +208,7 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
                       </span>
                     </div>
                     {unreadCount > 0 && activeTab !== u.id.toString() && (
-                      <div className="bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
+                      <div className="bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
                         {unreadCount > 99 ? '99+' : unreadCount}
                       </div>
                     )}
@@ -231,11 +235,11 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
       {inVoice && (
         <div className="px-3 py-3 bg-zinc-900/50 border-t border-zinc-800/50 flex flex-col gap-2">
           <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2 text-emerald-400">
+            <div className="flex items-center gap-2 text-indigo-400">
               <Signal className="w-3 h-3" />
               <span className="text-xs font-medium">Voice Connected</span>
             </div>
-            <span className={clsx("text-xs font-medium", ping < 50 ? "text-emerald-400" : ping < 150 ? "text-yellow-400" : "text-red-400")}>{ping} ms</span>
+            <span className={clsx("text-xs font-medium", ping < 50 ? "text-indigo-400" : ping < 150 ? "text-yellow-400" : "text-red-400")}>{ping} ms</span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex gap-1">

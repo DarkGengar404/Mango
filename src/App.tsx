@@ -62,6 +62,9 @@ export default function App() {
               const sharedKey = sharedSecrets[otherId];
               if (sharedKey) {
                 decryptedText = await decryptMessage(sharedKey, msg.encryptedPayload, msg.iv);
+                if (decryptedText.startsWith('MAIN_KEY:')) {
+                  decryptedText = ''; // Skip this message
+                }
               }
             }
             if (decryptedText) {
@@ -197,11 +200,25 @@ export default function App() {
     if (!socket || !keyPair) return;
 
     const handleMessage = async (data: any) => {
+      if (data.system) {
+        addMessage({
+          id: Math.random().toString(36).substring(7),
+          from: data.from,
+          to: data.to,
+          text: data.text,
+          timestamp: data.timestamp,
+          system: true
+        });
+        return;
+      }
+
       let decryptedText = '';
       
-      // Handle Main Room Key distribution
-      if (data.to !== 'main' && data.encryptedPayload && data.iv) {
-        const sharedKey = sharedSecrets[data.from];
+      if (data.to === 'main' && mainRoomKey) {
+        decryptedText = await decryptMessage(mainRoomKey, data.encryptedPayload, data.iv);
+      } else if (data.to !== 'main') {
+        const otherId = data.from === user?.id ? parseInt(data.to) : data.from;
+        const sharedKey = sharedSecrets[otherId];
         if (sharedKey) {
           const text = await decryptMessage(sharedKey, data.encryptedPayload, data.iv);
           if (text.startsWith('MAIN_KEY:')) {
@@ -213,13 +230,6 @@ export default function App() {
           } else {
             decryptedText = text;
           }
-        }
-      } else if (data.to === 'main' && mainRoomKey) {
-        decryptedText = await decryptMessage(mainRoomKey, data.encryptedPayload, data.iv);
-      } else if (data.to !== 'main') {
-        const sharedKey = sharedSecrets[data.from];
-        if (sharedKey) {
-          decryptedText = await decryptMessage(sharedKey, data.encryptedPayload, data.iv);
         }
       }
 
@@ -271,14 +281,24 @@ export default function App() {
           }
           
           try {
+            const settings = useStore.getState().screenshareSettings;
+            let videoConstraints: any = {
+              displaySurface: 'monitor',
+              frameRate: settings.fps
+            };
+            
+            if (settings.quality === '1080p') {
+              videoConstraints.width = { ideal: 1920 };
+              videoConstraints.height = { ideal: 1080 };
+            } else if (settings.quality === '720p') {
+              videoConstraints.width = { ideal: 1280 };
+              videoConstraints.height = { ideal: 720 };
+            }
+            // If 'source', we don't specify width/height constraints
+
             const stream = mode === 'screen' 
               ? await navigator.mediaDevices.getDisplayMedia({
-                  video: {
-                    displaySurface: 'monitor',
-                    frameRate: 30,
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
-                  },
+                  video: videoConstraints,
                   audio: true
                 })
               : await navigator.mediaDevices.getUserMedia({

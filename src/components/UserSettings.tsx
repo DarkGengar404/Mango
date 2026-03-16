@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
-import { X, User, Mic, Volume2, Sliders } from 'lucide-react';
+import { X, User, Mic, Volume2, Sliders, Monitor } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 
 export function UserSettings({ onClose }: { onClose: () => void }) {
-  const { user, token, selectedInputDevice, selectedOutputDevice, setSelectedInputDevice, setSelectedOutputDevice, noiseSuppressionLevel, setNoiseSuppressionLevel, inputGain, setInputGain } = useStore();
+  const { user, token, selectedInputDevice, selectedOutputDevice, setSelectedInputDevice, setSelectedOutputDevice, noiseSuppressionLevel, setNoiseSuppressionLevel, inputGain, setInputGain, screenshareSettings, setScreenshareSettings } = useStore();
   const [activeTab, setActiveTab] = useState<'profile' | 'voice'>('profile');
   const [displayName, setDisplayName] = useState(user?.displayName || user?.username || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
@@ -115,7 +115,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                       type="text"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       required
                     />
                   </div>
@@ -126,7 +126,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                       value={avatarUrl}
                       onChange={(e) => setAvatarUrl(e.target.value)}
                       placeholder="https://example.com/avatar.png"
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                   
@@ -136,7 +136,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                       value={bio}
                       onChange={(e) => setBio(e.target.value)}
                       placeholder="Tell us about yourself..."
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none h-24"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none h-24"
                     />
                   </div>
                   
@@ -154,7 +154,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                           type="text"
                           value={color}
                           onChange={(e) => setColor(e.target.value)}
-                          className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-orange-500 font-mono text-sm uppercase"
+                          className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm uppercase"
                         />
                       </div>
                     </div>
@@ -167,7 +167,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                           onChange={(e) => setGlow(e.target.checked)}
                           className="sr-only peer" 
                         />
-                        <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+                        <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
                         <span className="ml-3 text-sm font-medium text-zinc-400">Glow Effect</span>
                       </label>
                     </div>
@@ -186,7 +186,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                     </span>
                   </div>
 
-                  <button type="submit" className="bg-orange-600 hover:bg-orange-700 text-white font-medium py-2 px-6 rounded-lg transition-colors">
+                  <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-6 rounded-lg transition-colors">
                     Save Changes
                   </button>
                 </form>
@@ -205,7 +205,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                     <select
                       value={selectedInputDevice}
                       onChange={(e) => setSelectedInputDevice(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       <option value="">Default</option>
                       {audioInputs.map(d => (
@@ -221,7 +221,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                     <select
                       value={selectedOutputDevice}
                       onChange={(e) => setSelectedOutputDevice(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       <option value="">Default</option>
                       {audioOutputs.map(d => (
@@ -247,7 +247,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                         step="0.01" 
                         value={inputGain}
                         onChange={(e) => setInputGain(parseFloat(e.target.value))}
-                        className="w-full accent-orange-500"
+                        className="w-full accent-indigo-500"
                       />
                     </div>
 
@@ -263,7 +263,7 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                         step="1" 
                         value={noiseSuppressionLevel}
                         onChange={(e) => setNoiseSuppressionLevel(parseInt(e.target.value))}
-                        className="w-full accent-orange-500"
+                        className="w-full accent-indigo-500"
                       />
                     </div>
                   </div>

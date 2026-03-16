@@ -125,10 +125,13 @@ export function Chat() {
     }
   };
 
-  const filteredMessages = messages.filter(m => 
-    (activeTab === 'main' && m.to === 'main') ||
-    (activeTab !== 'main' && (m.to === activeTab || m.from === parseInt(activeTab)))
-  );
+  const filteredMessages = messages.filter(m => {
+    if (activeTab === 'main') return m.to === 'main';
+    return m.to !== 'main' && (
+      (m.from === parseInt(activeTab) && m.to.toString() === user?.id.toString()) ||
+      (m.from === user?.id && m.to.toString() === activeTab)
+    );
+  });
 
   const currentKey = activeTab === 'main' ? mainRoomKey : sharedSecrets[parseInt(activeTab)];
   const isKeyReady = !!currentKey;

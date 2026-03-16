@@ -47,7 +47,9 @@ export function VoiceManager() {
     if (!inVoice) {
       setLocalStream(null);
       if (audioContextRef.current) {
-        audioContextRef.current.close().catch(console.error);
+        if (audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close().catch(console.error);
+        }
         audioContextRef.current = null;
       }
       return;
@@ -99,7 +101,10 @@ export function VoiceManager() {
       }
       setLocalStream(null);
       if (audioContextRef.current) {
-        audioContextRef.current.close().catch(console.error);
+        if (audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close().catch(console.error);
+        }
+        audioContextRef.current = null;
       }
     };
   }, [inVoice, selectedInputDevice]);

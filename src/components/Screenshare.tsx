@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
-import { MonitorOff, X, VideoOff, Maximize2, Minimize2, Eye } from 'lucide-react';
+import { MonitorOff, X, VideoOff, Maximize2, Minimize2, Eye, Settings2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { sounds } from '../lib/sounds';
 
 export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => void, mode: 'screen' | 'camera', targetUserId?: number }) {
-  const { socket, user, users, streamViewers, localScreenStream, remoteStreams, setLocalScreenStream } = useStore();
+  const { socket, user, users, streamViewers, localScreenStream, remoteStreams, setLocalScreenStream, screenshareSettings, setScreenshareSettings } = useStore();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showQualitySettings, setShowQualitySettings] = useState(false);
 
   const viewers = streamViewers[targetUserId || user?.id || 0] || [];
   const viewerNames = viewers.map(id => users.find(u => u.id === id)?.displayName || 'Unknown').join(', ');
@@ -28,11 +29,20 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
     if (videoRef.current.srcObject !== streamToRender) {
       console.log("[Screenshare] Setting srcObject to stream:", streamToRender?.id);
       videoRef.current.srcObject = streamToRender;
+      videoRef.current.muted = true; // Ensure muted for autoplay
       if (streamToRender) {
-        videoRef.current.play().catch(e => console.error("[Screenshare] Immediate play failed", e));
+        videoRef.current.play().catch(e => {
+          if (e.name !== 'AbortError') {
+            console.error("[Screenshare] Immediate play failed", e);
+          }
+        });
         videoRef.current.onloadedmetadata = () => {
           console.log("[Screenshare] Metadata loaded, calling play()");
-          videoRef.current?.play().catch(e => console.error("[Screenshare] Video play failed", e));
+          videoRef.current?.play().catch(e => {
+            if (e.name !== 'AbortError') {
+              console.error("[Screenshare] Video play failed", e);
+            }
+          });
         };
       } else {
         videoRef.current.onloadedmetadata = null;
@@ -85,6 +95,40 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
           </h2>
         </div>
         <div className="flex gap-2">
+          {!targetUserId && (
+            <div className="relative">
+              <button onClick={() => setShowQualitySettings(!showQualitySettings)} className="text-zinc-400 hover:text-white p-1">
+                <Settings2 className="w-4 h-4" />
+              </button>
+              {showQualitySettings && (
+                <div className="absolute top-full right-0 mt-2 bg-zinc-900 border border-zinc-800 rounded-lg p-2 w-40 z-20 text-xs">
+                  <div className="mb-2">
+                    <label className="block text-zinc-400 mb-1">Resolution</label>
+                    <select
+                      value={screenshareSettings.quality}
+                      onChange={(e) => setScreenshareSettings({ ...screenshareSettings, quality: e.target.value as 'source' | '720p' | '1080p' })}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-white"
+                    >
+                      <option value="source">Source</option>
+                      <option value="1080p">1080p</option>
+                      <option value="720p">720p</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-zinc-400 mb-1">FPS</label>
+                    <select
+                      value={screenshareSettings.fps}
+                      onChange={(e) => setScreenshareSettings({ ...screenshareSettings, fps: parseInt(e.target.value) as 30 | 60 })}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-white"
+                    >
+                      <option value={60}>60 FPS</option>
+                      <option value={30}>30 FPS</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-zinc-400 hover:text-white p-1">
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
