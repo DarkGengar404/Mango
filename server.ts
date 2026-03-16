@@ -109,8 +109,14 @@ async function startServer() {
     const { username, email, password, publicKey, isSignup } = req.body;
     
     try {
-      const stmt = db.prepare('SELECT * FROM users WHERE username = ? OR email = ?');
-      const user = stmt.get(username, email || '') as any;
+      let user;
+      if (isSignup) {
+        const stmt = db.prepare('SELECT * FROM users WHERE username = ? OR email = ?');
+        user = stmt.get(username, email) as any;
+      } else {
+        const stmt = db.prepare('SELECT * FROM users WHERE username = ? OR email = ?');
+        user = stmt.get(username, username) as any;
+      }
 
       if (!isSignup) {
         // Login flow
@@ -189,42 +195,6 @@ async function startServer() {
     db.prepare('UPDATE users SET password_hash = ?, password_reset_token = NULL, password_reset_expires = NULL WHERE id = ?').run(hash, user.id);
     
     res.json({ success: true });
-  });
-
-  app.post('/api/admin/reset-db', (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-    
-    try {
-      const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET) as any;
-      if (!decoded.isAdmin) return res.status(403).json({ error: 'Forbidden' });
-
-      db.exec('DELETE FROM users');
-      db.exec('DELETE FROM settings');
-      db.exec("INSERT INTO settings (key, value) VALUES ('registration_open', '1')");
-      
-      res.json({ success: true });
-    } catch (error) {
-      res.status(401).json({ error: 'Invalid token' });
-    }
-  });
-
-  app.post('/api/admin/settings', (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
-    
-    try {
-      const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET) as any;
-      if (!decoded.isAdmin) return res.status(403).json({ error: 'Forbidden' });
-
-      const { registrationOpen } = req.body;
-      const stmt = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
-      stmt.run(registrationOpen ? '1' : '0', 'registration_open');
-      
-      res.json({ success: true });
-    } catch (error) {
-      res.status(401).json({ error: 'Invalid token' });
-    }
   });
 
   app.get('/api/users', (req, res) => {

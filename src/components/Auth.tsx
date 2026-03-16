@@ -140,7 +140,9 @@ export function Auth() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isForgotPassword && (
             <div>
-              <label className="block text-sm font-medium text-zinc-400 mb-1">Username</label>
+              <label className="block text-sm font-medium text-zinc-400 mb-1">
+                {isSignup ? 'Username' : 'Username or Email'}
+              </label>
               <input
                 type="text"
                 value={username}
