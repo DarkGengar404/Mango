@@ -59,7 +59,16 @@ interface AppState {
   localVolumes: Record<number, number>;
   localMutes: Record<number, boolean>;
   lastViewed: Record<string, number>;
+  peerConnections: Record<number, RTCPeerConnection>;
+  localStream: MediaStream | null;
+  localScreenStream: MediaStream | null;
+  remoteStreams: Record<number, MediaStream>;
   
+  setLocalStream: (stream: MediaStream | null) => void;
+  setLocalScreenStream: (stream: MediaStream | null) => void;
+  setRemoteStream: (userId: number, stream: MediaStream | null) => void;
+  setPeerConnection: (userId: number, pc: RTCPeerConnection | null) => void;
+  setMessages: (messages: Message[]) => void;
   setLastViewed: (tab: string, timestamp: number) => void;
   setClosedDMs: (userIds: number[]) => void;
   setUser: (user: User | null, token: string | null) => void;
@@ -122,7 +131,26 @@ export const useStore = create<AppState>((set) => ({
   localVolumes: {},
   localMutes: {},
   lastViewed: {},
+  peerConnections: {},
+  localStream: null,
+  localScreenStream: null,
+  remoteStreams: {},
 
+  setLocalStream: (localStream) => set({ localStream }),
+  setLocalScreenStream: (localScreenStream) => set({ localScreenStream }),
+  setRemoteStream: (userId, stream) => set((s) => {
+    const newStreams = { ...s.remoteStreams };
+    if (stream) newStreams[userId] = stream;
+    else delete newStreams[userId];
+    return { remoteStreams: newStreams };
+  }),
+  setPeerConnection: (userId, pc) => set((s) => {
+    const newPCs = { ...s.peerConnections };
+    if (pc) newPCs[userId] = pc;
+    else delete newPCs[userId];
+    return { peerConnections: newPCs };
+  }),
+  setMessages: (messages) => set({ messages }),
   setLastViewed: (tab, timestamp) => set((s) => ({ lastViewed: { ...s.lastViewed, [tab]: timestamp } })),
   setClosedDMs: (closedDMs) => {
     localStorage.setItem('closedDMs', JSON.stringify(closedDMs));

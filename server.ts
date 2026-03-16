@@ -12,7 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-change-in-prod';
-const PORT = parseInt(process.env.PORT || '3000');
+const PORT = 3000;
 
 // Initialize SQLite
 const db = new Database('chat.db');
@@ -26,8 +26,31 @@ db.exec(`
     password_hash TEXT NOT NULL,
     is_admin INTEGER DEFAULT 0,
     password_reset_token TEXT,
-    password_reset_expires INTEGER
+    password_reset_expires INTEGER,
+    display_name TEXT,
+    public_key TEXT,
+    avatar_url TEXT,
+    color TEXT,
+    glow INTEGER DEFAULT 0,
+    bio TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_id INTEGER NOT NULL,
+    to_id TEXT NOT NULL, -- 'main' or userId
+    encrypted_payload TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    FOREIGN KEY(from_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
+
+  INSERT OR IGNORE INTO settings (key, value) VALUES ('registration_open', '1');
 `);
 
 // Migration: Add columns if they don't exist
@@ -53,15 +76,6 @@ for (const col of columns) {
   }
 }
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
-  );
-
-  INSERT OR IGNORE INTO settings (key, value) VALUES ('registration_open', '1');
-`);
-
 const onlineUsers = new Set<number>();
 const userSockets = new Map<number, Set<string>>();
 const voiceStates = new Map<number, { muted: boolean, deafened: boolean }>();
@@ -74,10 +88,15 @@ async function startServer() {
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: { origin: '*' },
-    maxHttpBufferSize: 1e8 // 100 MB for video chunks if needed
+    maxHttpBufferSize: 1e6 // 1 MB for safety
   });
 
   app.use(express.json());
+
+  // Health check
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok' });
+  });
 
   // API Routes
   app.get('/api/settings', (req, res) => {
@@ -110,7 +129,7 @@ async function startServer() {
           io.emit('users_updated');
         }
 
-        const token = jwt.sign({ id: user.id, username: user.username, isAdmin: !!user.is_admin }, JWT_SECRET);
+        const token = jwt.sign({ id: user.id, username: user.username, isAdmin: !!user.is_admin }, JWT_SECRET, { expiresIn: '24h' });
         return res.json({ token, user: { id: user.id, username: user.username, email: user.email, displayName: user.display_name || user.username, isAdmin: !!user.is_admin, publicKey: user.public_key } });
       } else {
         // Signup flow
@@ -136,7 +155,7 @@ async function startServer() {
         const info = insert.run(username, email, username, hash, isAdmin, publicKey);
 
         io.emit('users_updated');
-        const token = jwt.sign({ id: info.lastInsertRowid, username, isAdmin: !!isAdmin }, JWT_SECRET);
+        const token = jwt.sign({ id: info.lastInsertRowid, username, isAdmin: !!isAdmin }, JWT_SECRET, { expiresIn: '24h' });
         return res.json({ token, user: { id: info.lastInsertRowid, username, email, displayName: username, isAdmin: !!isAdmin, publicKey } });
       }
     } catch (error: any) {
@@ -323,6 +342,30 @@ async function startServer() {
     }
   });
 
+  app.get('/api/messages', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+      const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET) as any;
+      const { to } = req.query;
+
+      let stmt;
+      if (to === 'main') {
+        stmt = db.prepare('SELECT from_id as "from", to_id as "to", encrypted_payload as encryptedPayload, iv, timestamp FROM messages WHERE to_id = "main" ORDER BY timestamp ASC LIMIT 100');
+        res.json(stmt.all());
+      } else if (to) {
+        const targetId = to.toString();
+        stmt = db.prepare('SELECT from_id as "from", to_id as "to", encrypted_payload as encryptedPayload, iv, timestamp FROM messages WHERE (from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?) ORDER BY timestamp ASC LIMIT 100');
+        res.json(stmt.all(decoded.id, targetId, targetId, decoded.id.toString()));
+      } else {
+        res.status(400).json({ error: 'Missing "to" parameter' });
+      }
+    } catch (error) {
+      res.status(401).json({ error: 'Invalid token' });
+    }
+  });
+
   app.post('/api/admin/users', async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
@@ -387,42 +430,37 @@ async function startServer() {
 
     socket.on('message', (data) => {
       // data: { to: 'main' | userId, encryptedPayload: string, iv: string }
+      if (!data.encryptedPayload || !data.iv || !data.to) return;
+
+      const timestamp = Date.now();
+      const payload = {
+        from: socket.data.user.id,
+        to: data.to,
+        encryptedPayload: data.encryptedPayload,
+        iv: data.iv,
+        timestamp
+      };
+
+      // Persist message
+      const insert = db.prepare('INSERT INTO messages (from_id, to_id, encrypted_payload, iv, timestamp) VALUES (?, ?, ?, ?, ?)');
+      insert.run(socket.data.user.id, data.to.toString(), data.encryptedPayload, data.iv, timestamp);
+
       if (data.to === 'main') {
-        io.emit('message', {
-          from: socket.data.user.id,
-          to: 'main',
-          encryptedPayload: data.encryptedPayload,
-          iv: data.iv,
-          timestamp: Date.now()
-        });
+        io.emit('message', payload);
       } else {
-        const payload = {
-          from: socket.data.user.id,
-          to: data.to,
-          encryptedPayload: data.encryptedPayload,
-          iv: data.iv,
-          timestamp: Date.now()
-        };
         io.to(`user_${data.to}`).emit('message', payload);
         io.to(`user_${socket.data.user.id}`).emit('message', payload);
       }
     });
 
-    // WebCodecs Screenshare Relay
-    socket.on('video_chunk', (data) => {
-      // data: { chunk: ArrayBuffer, type: 'key' | 'delta', timestamp: number }
-      socket.broadcast.emit('video_chunk', {
+    // WebRTC Signaling
+    socket.on('webrtc_signal', (data) => {
+      // data: { to: userId, signal: any, type: 'voice' | 'screen' | 'camera' }
+      if (!data.to || !data.signal) return;
+      io.to(`user_${data.to}`).emit('webrtc_signal', {
         from: socket.data.user.id,
-        chunk: data.chunk,
-        type: data.type,
-        timestamp: data.timestamp
-      });
-    });
-
-    socket.on('video_config', (data) => {
-      socket.broadcast.emit('video_config', {
-        from: socket.data.user.id,
-        config: data.config
+        signal: data.signal,
+        type: data.type
       });
     });
 
@@ -574,4 +612,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});

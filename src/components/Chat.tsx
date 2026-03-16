@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store';
-import { encryptMessage, decryptMessage, importPublicKey, deriveSharedSecret, exportSymmetricKey, importSymmetricKey, generateSymmetricKey } from '../lib/crypto';
+import { encryptMessage, decryptMessage, importPublicKey, deriveSharedSecret, exportSymmetricKey, importSymmetricKey, generateSymmetricKey, saveKeyToDB, getKeyFromDB } from '../lib/crypto';
 import { Send, Users, Shield, Monitor, Mic, Video, Citrus } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -62,23 +62,26 @@ export function Chat() {
     const distributeKey = async () => {
       let symKey = mainRoomKey;
       if (!symKey) {
-        // Try to load from localStorage first for persistence
-        const savedKey = localStorage.getItem('mango_main_key');
-        if (savedKey) {
-          try {
-            symKey = await importSymmetricKey(savedKey);
-            setMainRoomKey(symKey);
-          } catch (e) {
-            console.error('Failed to import saved main key', e);
+        // Try to load from IndexedDB first for persistence
+        try {
+          const keyData = await getKeyFromDB('mainRoomKey');
+          if (keyData) {
+            if (typeof keyData === 'string') {
+              symKey = await importSymmetricKey(keyData);
+            } else if (typeof keyData === 'object' && keyData.type === 'secret') {
+              symKey = keyData;
+            }
+            if (symKey) setMainRoomKey(symKey);
           }
+        } catch (e) {
+          console.error('Failed to load main key from DB', e);
         }
       }
 
       if (!symKey) {
         symKey = await generateSymmetricKey();
         setMainRoomKey(symKey);
-        const exported = await exportSymmetricKey(symKey);
-        localStorage.setItem('mango_main_key', exported);
+        await saveKeyToDB('mainRoomKey', symKey);
       }
       
       const exportedSymKey = await exportSymmetricKey(symKey);

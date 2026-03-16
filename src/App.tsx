@@ -7,15 +7,16 @@ import { Chat } from './components/Chat';
 import { AdminPanel } from './components/AdminPanel';
 import { Screenshare } from './components/Screenshare';
 import { VoiceManager } from './components/VoiceManager';
+import { WebRTCManager } from './components/WebRTCManager';
 import { io } from 'socket.io-client';
-import { decryptMessage, importSymmetricKey } from './lib/crypto';
+import { decryptMessage, importSymmetricKey, getKeyFromDB, saveKeyToDB } from './lib/crypto';
 import { loadKeyPair } from './lib/db';
 import { sounds } from './lib/sounds';
 
 export default function App() {
-  const { user, token, users, setUsers, socket, setSocket, addMessage, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice } = useStore();
+  const { user, token, users, setUsers, socket, setSocket, addMessage, setMessages, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice, activeTab, setPeerConnection, peerConnections, setLocalScreenStream } = useStore();
   const [showAdmin, setShowAdmin] = useState(false);
-  const [showScreenshare, setShowScreenshare] = useState<{ show: boolean, mode: 'screen' | 'camera', targetUserId?: number, stream?: MediaStream }>({ show: false, mode: 'screen' });
+  const [showScreenshare, setShowScreenshare] = useState<{ show: boolean, mode: 'screen' | 'camera', targetUserId?: number }>({ show: false, mode: 'screen' });
 
   useEffect(() => {
     if (!keyPair) {
@@ -23,7 +24,64 @@ export default function App() {
         if (kp) setKeyPair(kp);
       });
     }
-  }, [keyPair]);
+    if (!mainRoomKey) {
+      getKeyFromDB('mainRoomKey').then(async (keyData) => {
+        if (keyData) {
+          try {
+            if (typeof keyData === 'string') {
+              const key = await importSymmetricKey(keyData);
+              setMainRoomKey(key);
+            } else if (typeof keyData === 'object' && keyData.type === 'secret') {
+              setMainRoomKey(keyData);
+            }
+          } catch (e) {
+            console.error('Failed to import main room key', e);
+          }
+        }
+      });
+    }
+  }, [keyPair, mainRoomKey]);
+
+  useEffect(() => {
+    if (!token || !user) return;
+
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch(`/api/messages?to=${activeTab}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const history: any[] = [];
+          for (const msg of data) {
+            let decryptedText = '';
+            if (msg.to === 'main' && mainRoomKey) {
+              decryptedText = await decryptMessage(mainRoomKey, msg.encryptedPayload, msg.iv);
+            } else if (msg.to !== 'main') {
+              const otherId = msg.from === user.id ? parseInt(msg.to) : msg.from;
+              const sharedKey = sharedSecrets[otherId];
+              if (sharedKey) {
+                decryptedText = await decryptMessage(sharedKey, msg.encryptedPayload, msg.iv);
+              }
+            }
+            if (decryptedText) {
+              history.push({
+                id: Math.random().toString(36).substring(7),
+                from: msg.from,
+                to: msg.to,
+                text: decryptedText,
+                timestamp: msg.timestamp
+              });
+            }
+          }
+          setMessages(history);
+        }
+      } catch (e) {
+        console.error('Failed to fetch history:', e);
+      }
+    };
+    fetchHistory();
+  }, [token, user, activeTab, mainRoomKey, sharedSecrets]);
 
   useEffect(() => {
     if (!token || !user) return;
@@ -116,6 +174,11 @@ export default function App() {
       }
     });
 
+    socketInstance.on('webrtc_signal', (data: { from: number, signal: any, type: string }) => {
+      // This will be handled by components that manage peer connections
+      window.dispatchEvent(new CustomEvent('webrtc_signal', { detail: data }));
+    });
+
     socketInstance.on('disconnect', () => {
       setInVoice(false);
       setShowScreenshare({ show: false, mode: 'screen' });
@@ -145,6 +208,7 @@ export default function App() {
             const keyBase64 = text.split(':')[1];
             const symKey = await importSymmetricKey(keyBase64);
             setMainRoomKey(symKey);
+            await saveKeyToDB('mainRoomKey', keyBase64);
             return; // Don't show this as a message
           } else {
             decryptedText = text;
@@ -223,11 +287,16 @@ export default function App() {
                     width: { ideal: 1280 },
                     height: { ideal: 720 }
                   },
-                  audio: true
+                  audio: !useStore.getState().inVoice
                 });
             
             if (stream) {
-              setShowScreenshare({ show: true, mode, stream });
+              setLocalScreenStream(stream);
+              setShowScreenshare({ show: true, mode });
+              stream.getVideoTracks()[0].onended = () => {
+                setLocalScreenStream(null);
+                setShowScreenshare({ show: false, mode: 'screen' });
+              };
             }
           } catch (e: any) {
             if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') {
@@ -266,8 +335,9 @@ export default function App() {
       )}
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
-      {showScreenshare.show && <Screenshare mode={showScreenshare.mode} targetUserId={showScreenshare.targetUserId} stream={showScreenshare.stream} onClose={() => setShowScreenshare({ show: false, mode: 'screen' })} />}
+      {showScreenshare.show && <Screenshare mode={showScreenshare.mode} targetUserId={showScreenshare.targetUserId} onClose={() => setShowScreenshare({ show: false, mode: 'screen' })} />}
       <VoiceManager />
+      <WebRTCManager />
     </div>
   );
 }
