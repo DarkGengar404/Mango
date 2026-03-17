@@ -67,9 +67,10 @@ export default function App() {
               
               if (!sharedKey && keyPair) {
                 const otherUser = useStore.getState().users.find(u => u.id === otherId);
-                if (otherUser && otherUser.publicKey) {
+                const pubKeyStr = otherUser?.public_key || otherUser?.publicKey;
+                if (pubKeyStr) {
                   try {
-                    const pubKey = await importPublicKey(otherUser.publicKey);
+                    const pubKey = await importPublicKey(pubKeyStr);
                     sharedKey = await deriveSharedSecret(keyPair.privateKey, pubKey);
                     useStore.getState().setSharedSecret(otherId, sharedKey);
                   } catch (e) {
@@ -334,9 +335,10 @@ export default function App() {
         
         if (!sharedKey && keyPair) {
           const otherUser = useStore.getState().users.find(u => u.id === otherId);
-          if (otherUser && otherUser.publicKey) {
+          const pubKeyStr = otherUser?.public_key || otherUser?.publicKey;
+          if (pubKeyStr) {
             try {
-              const pubKey = await importPublicKey(otherUser.publicKey);
+              const pubKey = await importPublicKey(pubKeyStr);
               sharedKey = await deriveSharedSecret(keyPair.privateKey, pubKey);
               useStore.getState().setSharedSecret(otherId, sharedKey);
             } catch (e) {
@@ -405,17 +407,20 @@ export default function App() {
     }
   }, [screenshareSettings, localScreenStream]);
 
-  const onOpenScreenshare = useCallback(async (mode: 'screen' | 'camera') => {
+  const onOpenScreenshare = useCallback(async (mode: 'screen' | 'camera', forceRestart = false) => {
     const currentMode = useStore.getState().videoStreams[user?.id || 0];
     
-    if (currentMode === mode && showScreenshare.show && !showScreenshare.targetUserId) {
+    if (!forceRestart && currentMode === mode && showScreenshare.show && !showScreenshare.targetUserId) {
       // Stop sharing
       setShowScreenshare({ show: false, mode: 'screen' });
       return;
     }
 
     // Mutual exclusivity: stop previous if exists
-    if (currentMode) {
+    if (currentMode || forceRestart) {
+      if (localScreenStream) {
+        localScreenStream.getTracks().forEach(t => t.stop());
+      }
       setShowScreenshare({ show: false, mode: 'screen' });
       // Small delay to ensure cleanup
       await new Promise(r => setTimeout(r, 100));
@@ -445,8 +450,10 @@ export default function App() {
               noiseSuppression: false,
               autoGainControl: false,
               suppressLocalAudioPlayback: false,
-            } as any
-          })
+              systemAudio: 'include'
+            } as any,
+            preferCurrentTab: false
+          } as any)
         : await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: useStore.getState().facingMode,
@@ -476,13 +483,13 @@ export default function App() {
         console.error('Failed to get media', e);
       }
     }
-  }, [user, socket, showScreenshare, setLocalScreenStream]);
+  }, [user, socket, showScreenshare, setLocalScreenStream, localScreenStream]);
 
   useEffect(() => {
     const currentMode = useStore.getState().videoStreams[user?.id || 0];
     if (currentMode === 'camera' && showScreenshare.show && !showScreenshare.targetUserId) {
       // Restart camera with new facingMode
-      onOpenScreenshare('camera');
+      onOpenScreenshare('camera', true);
     }
   }, [facingMode, onOpenScreenshare]);
 

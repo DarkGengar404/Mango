@@ -1,10 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { useStore } from '../store';
-import { Track } from 'livekit-client';
-import { KrispNoiseFilter, isKrispNoiseFilterSupported } from '@livekit/krisp-noise-filter';
+import { useKrisp } from '../hooks/useKrisp';
 
 export function VoiceManager() {
   const { socket, inVoice, user, isMuted, isDeafened, isKrispEnabled, addSpeakingUser, selectedInputDevice, selectedOutputDevice, localVolumes, localMutes, setLocalStream, remoteVoiceStreams, refreshAudioCounter } = useStore();
+  
+  const [rawMicrophoneStream, setRawMicrophoneStream] = React.useState<MediaStream | null>(null);
+  const { cleanStream, isModelLoaded } = useKrisp(rawMicrophoneStream, isKrispEnabled);
+
   const audioContextRef = useRef<AudioContext | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const remoteAudioNodes = useRef<Record<number, { source: MediaStreamAudioSourceNode, gain: GainNode, stream: MediaStream }>>({});
@@ -15,7 +18,7 @@ export function VoiceManager() {
   // Initialize AudioContext once
   useEffect(() => {
     if (inVoice && !audioContextRef.current) {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 48000 });
       audioContextRef.current = audioCtx;
       
       audioCtx.onstatechange = () => {
@@ -109,51 +112,56 @@ export function VoiceManager() {
           audio: {
             deviceId: selectedInputDevice ? { exact: selectedInputDevice } : undefined,
             echoCancellation: true,
-            noiseSuppression: false,
+            noiseSuppression: false, // Bypass native filter for Krisp
             autoGainControl: true,
             sampleRate: 48000,
             channelCount: 1,
           }
         });
+        setRawMicrophoneStream(stream);
         originalStreamRef.current = stream;
         
+        // The rest of the pipeline is handled by useKrisp hook and the useEffect below
+      } catch (err) {
+        console.error("Failed to access microphone", err);
+      }
+    };
+
+    startVoice();
+
+    return () => {
+      if (speakingTimeoutRef.current) clearTimeout(speakingTimeoutRef.current);
+      if (useStore.getState().localStream) {
+        useStore.getState().localStream?.getTracks().forEach(t => t.stop());
+      }
+      if (originalStreamRef.current) {
+        originalStreamRef.current.getTracks().forEach(t => t.stop());
+        originalStreamRef.current = null;
+      }
+      setRawMicrophoneStream(null);
+      setLocalStream(null);
+      socket?.emit('set_stream_id', { type: 'voice', streamId: null });
+    };
+  }, [inVoice, selectedInputDevice]);
+
+  // Update local stream when cleanStream from useKrisp changes
+  useEffect(() => {
+    if (cleanStream) {
+      setLocalStream(cleanStream);
+      socket?.emit('set_stream_id', { type: 'voice', streamId: cleanStream.id });
+      
+      // Setup speaking detection on the clean stream
+      const setupSpeakingDetection = async () => {
+        if (!audioContextRef.current) return;
         const audioCtx = audioContextRef.current;
-        if (!audioCtx) return;
         
-        if (audioCtx.state === 'suspended') {
-          await audioCtx.resume();
-        }
-        
-        let finalStream = stream;
-        try {
-          if (isKrispEnabled && isKrispNoiseFilterSupported()) {
-            console.log("[VoiceManager] Initializing Krisp...");
-            const processor = await (KrispNoiseFilter as any)();
-            krispProcessorRef.current = processor;
-            await processor.init({
-              kind: Track.Kind.Audio,
-              track: stream.getAudioTracks()[0],
-              audioContext: audioCtx,
-            });
-            if (processor.processedTrack) {
-              finalStream = new MediaStream([processor.processedTrack]);
-              console.log("[VoiceManager] Krisp noise suppression enabled");
-            }
-          }
-        } catch (e) {
-          console.error("[VoiceManager] Failed to initialize Krisp noise suppression", e);
-        }
-
-        setLocalStream(finalStream);
-        socket?.emit('set_stream_id', { type: 'voice', streamId: finalStream.id });
-
         await audioCtx.audioWorklet.addModule('/audio-processor.js');
         
         if (localSourceNodeRef.current) {
           localSourceNodeRef.current.disconnect();
         }
         
-        const source = audioCtx.createMediaStreamSource(finalStream);
+        const source = audioCtx.createMediaStreamSource(cleanStream);
         localSourceNodeRef.current = source;
         
         const workletNode = new AudioWorkletNode(audioCtx, 'audio-processor');
@@ -186,30 +194,11 @@ export function VoiceManager() {
             }, 500);
           }
         };
-      } catch (err) {
-        console.error("Failed to access microphone", err);
-      }
-    };
-
-    startVoice();
-
-    return () => {
-      if (speakingTimeoutRef.current) clearTimeout(speakingTimeoutRef.current);
-      if (useStore.getState().localStream) {
-        useStore.getState().localStream?.getTracks().forEach(t => t.stop());
-      }
-      if (originalStreamRef.current) {
-        originalStreamRef.current.getTracks().forEach(t => t.stop());
-        originalStreamRef.current = null;
-      }
-      if (krispProcessorRef.current) {
-        try { krispProcessorRef.current.dispose(); } catch(e) {}
-        krispProcessorRef.current = null;
-      }
-      setLocalStream(null);
-      socket?.emit('set_stream_id', { type: 'voice', streamId: null });
-    };
-  }, [inVoice, selectedInputDevice, isKrispEnabled]);
+      };
+      
+      setupSpeakingDetection();
+    }
+  }, [cleanStream, isModelLoaded]);
 
   const isSpeakingRef = useRef(false);
   const speakingTimeoutRef = useRef<NodeJS.Timeout | null>(null);

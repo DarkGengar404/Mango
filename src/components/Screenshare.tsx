@@ -12,6 +12,7 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showQualitySettings, setShowQualitySettings] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ userId: number, x: number, y: number } | null>(null);
+  const [isLocalMuted, setIsLocalMuted] = useState(false);
 
   const viewers = streamViewers[targetUserId || user?.id || 0] || [];
   const viewerNames = viewers.map(id => users.find(u => u.id === id)?.displayName || 'Unknown').join(', ');
@@ -226,12 +227,15 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
               <button
                 onClick={() => {
                   const track = localScreenStream.getAudioTracks()[0];
-                  if (track) track.enabled = !track.enabled;
+                  if (track) {
+                    track.enabled = !track.enabled;
+                    setIsLocalMuted(!track.enabled);
+                  }
                 }}
                 className="p-1.5 bg-black/60 backdrop-blur-md rounded-lg text-white border border-white/10"
                 title="Mute your screenshare for others"
               >
-                {localScreenStream.getAudioTracks()[0]?.enabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                {!isLocalMuted ? <Volume2 size={14} /> : <VolumeX size={14} />}
               </button>
             )
           )}
