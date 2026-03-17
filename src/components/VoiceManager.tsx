@@ -9,6 +9,7 @@ export function VoiceManager() {
   const { cleanStream, isModelLoaded } = useKrisp(rawMicrophoneStream, isKrispEnabled);
 
   const audioContextRef = useRef<AudioContext | null>(null);
+  const audioWorkletModulesRef = useRef<Set<string>>(new Set());
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const remoteAudioNodes = useRef<Record<number, { source: MediaStreamAudioSourceNode, gain: GainNode, stream: MediaStream }>>({});
   const localSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -18,22 +19,32 @@ export function VoiceManager() {
   // Initialize AudioContext once
   useEffect(() => {
     if (inVoice && !audioContextRef.current) {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 48000 });
-      audioContextRef.current = audioCtx;
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) {
+        console.error('[VoiceManager] AudioContext is not supported');
+        return;
+      }
       
-      audioCtx.onstatechange = () => {
-        console.log(`[VoiceManager] AudioContext state: ${audioCtx.state}`);
+      try {
+        const audioCtx = new AudioContextClass({ sampleRate: 48000 });
+        audioContextRef.current = audioCtx;
+        
+        audioCtx.onstatechange = () => {
+          console.log(`[VoiceManager] AudioContext state: ${audioCtx.state}`);
+          if (audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(console.error);
+          }
+        };
+
         if (audioCtx.state === 'suspended') {
           audioCtx.resume().catch(console.error);
         }
-      };
 
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume().catch(console.error);
-      }
-
-      if ((audioCtx as any).setSinkId && selectedOutputDevice) {
-        (audioCtx as any).setSinkId(selectedOutputDevice).catch(console.error);
+        if ((audioCtx as any).setSinkId && selectedOutputDevice) {
+          (audioCtx as any).setSinkId(selectedOutputDevice).catch(console.error);
+        }
+      } catch (err) {
+        console.error('[VoiceManager] Failed to create AudioContext', err);
       }
     }
 
@@ -155,11 +166,18 @@ export function VoiceManager() {
         if (!audioContextRef.current) return;
         const audioCtx = audioContextRef.current;
         
-        await audioCtx.audioWorklet.addModule('/audio-processor.js');
-        
-        if (localSourceNodeRef.current) {
-          localSourceNodeRef.current.disconnect();
+      if (!audioWorkletModulesRef.current.has('/audio-processor.js')) {
+        try {
+          await audioCtx.audioWorklet.addModule('/audio-processor.js');
+          audioWorkletModulesRef.current.add('/audio-processor.js');
+        } catch (e) {
+          console.error('[VoiceManager] Failed to add audio-processor module', e);
         }
+      }
+      
+      if (localSourceNodeRef.current) {
+        try { localSourceNodeRef.current.disconnect(); } catch(e) {}
+      }
         
         const source = audioCtx.createMediaStreamSource(cleanStream);
         localSourceNodeRef.current = source;

@@ -38,18 +38,27 @@ export function useKrisp(rawStream: MediaStream | null, isKrispEnabled: boolean)
     const initKrisp = async () => {
       try {
         // 1. Create AudioContext locked to 48kHz (required by most neural audio models)
-        const ctx = new AudioContext({ sampleRate: 48000 });
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextClass) {
+          throw new Error('AudioContext is not supported');
+        }
+        const ctx = new AudioContextClass({ sampleRate: 48000 });
         audioContextRef.current = ctx;
 
         // 2. Load the AudioWorklet module
         // Using Vite's URL import ensures the worklet is correctly bundled and served
         const processorUrl = new URL('../lib/krisp-processor.ts', import.meta.url).href;
-        await ctx.audioWorklet.addModule(processorUrl);
+        try {
+          await ctx.audioWorklet.addModule(processorUrl);
+        } catch (e) {
+          // If it fails because it's already added, we can ignore or log
+          console.warn('[Krisp] Module might already be added:', e);
+        }
 
-        // 3. Fetch the Wasm binary
-        // This should be placed in the /public folder
-        const response = await fetch('/rnnoise.wasm');
-        if (!response.ok) throw new Error('Could not load rnnoise.wasm binary');
+        // 3. Fetch the Wasm binary from a reliable CDN
+        const wasmUrl = 'https://unpkg.com/@livekit/krisp-noise-filter@0.4.1/dist/rnnoise.wasm';
+        const response = await fetch(wasmUrl);
+        if (!response.ok) throw new Error('Could not load rnnoise.wasm binary from CDN');
         const wasmBytes = await response.arrayBuffer();
 
         // 4. Initialize the Pipeline

@@ -479,9 +479,16 @@ export default function App() {
         };
       }
     } catch (e: any) {
-      if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') {
-        console.error('Failed to get media', e);
+      console.error('Failed to get media', e);
+      let errorMsg = 'Failed to access media device.';
+      if (e.name === 'NotAllowedError') {
+        errorMsg = 'Permission denied. Please allow access to your camera/microphone/screen.';
+      } else if (e.name === 'NotFoundError') {
+        errorMsg = 'No media device found.';
+      } else if (e.name === 'NotReadableError') {
+        errorMsg = 'Media device is already in use by another application.';
       }
+      alert(errorMsg);
     }
   }, [user, socket, showScreenshare, setLocalScreenStream, localScreenStream]);
 

@@ -9,7 +9,9 @@ const ICE_SERVERS = {
   ]
 };
 
-const PeerConnection = window.RTCPeerConnection || (window as any).webkitRTCPeerConnection || (window as any).mozRTCPeerConnection;
+const PeerConnection = typeof window !== 'undefined' ? (window.RTCPeerConnection || (window as any).webkitRTCPeerConnection || (window as any).mozRTCPeerConnection) : null;
+const SessionDescription = typeof window !== 'undefined' ? (window.RTCSessionDescription || (window as any).webkitRTCSessionDescription || (window as any).mozRTCSessionDescription) : null;
+const IceCandidate = typeof window !== 'undefined' ? (window.RTCIceCandidate || (window as any).webkitRTCIceCandidate || (window as any).mozRTCIceCandidate) : null;
 
 export function WebRTCManager() {
   const { 
@@ -21,7 +23,7 @@ export function WebRTCManager() {
   } = useStore();
 
   const pcs = useRef<Record<number, any>>({});
-  const localTracks = useRef<Record<string, RTCRtpSender>>({}); // pcId_trackId -> sender
+  const localTracks = useRef<Record<string, any>>({}); // pcId_trackId -> sender
   const makingOffer = useRef<Record<number, boolean>>({});
   const ignoreOffer = useRef<Record<number, boolean>>({});
   const sdpFilter = (sdp: string) => {
@@ -235,7 +237,11 @@ export function WebRTCManager() {
             return;
           }
 
-          await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          if (!SessionDescription) {
+            console.error('[WebRTC] RTCSessionDescription is not supported');
+            return;
+          }
+          await pc.setRemoteDescription(new SessionDescription(signal.sdp));
           if (signal.sdp.type === 'offer') {
             const answer = await pc.createAnswer();
             const modifiedAnswer = {
@@ -250,7 +256,11 @@ export function WebRTCManager() {
           }
         } else if (signal.candidate) {
           try {
-            await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+            if (!IceCandidate) {
+              console.error('[WebRTC] RTCIceCandidate is not supported');
+              return;
+            }
+            await pc.addIceCandidate(new IceCandidate(signal.candidate));
           } catch (err) {
             if (!ignoreOffer.current[from]) {
               console.error(`[WebRTC] Error adding ICE candidate from ${from}:`, err);
