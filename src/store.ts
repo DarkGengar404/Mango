@@ -44,6 +44,7 @@ interface AppState {
   inVoice: boolean;
   isMuted: boolean;
   isDeafened: boolean;
+  isKrispEnabled: boolean;
   ping: number;
   speakingUsers: number[];
   selectedInputDevice: string;
@@ -85,6 +86,7 @@ interface AppState {
   setInVoice: (inVoice: boolean) => void;
   setIsMuted: (val: boolean) => void;
   setIsDeafened: (val: boolean) => void;
+  setIsKrispEnabled: (val: boolean) => void;
   setPing: (val: number) => void;
   addSpeakingUser: (id: number) => void;
   removeSpeakingUser: (id: number) => void;
@@ -117,6 +119,7 @@ export const useStore = create<AppState>((set) => ({
   inVoice: false,
   isMuted: false,
   isDeafened: false,
+  isKrispEnabled: localStorage.getItem('mango_krisp_enabled') === 'true',
   ping: 0,
   speakingUsers: [],
   selectedInputDevice: localStorage.getItem('mango_input_device') || '',
@@ -197,6 +200,10 @@ export const useStore = create<AppState>((set) => ({
   setInVoice: (inVoice) => set({ inVoice }),
   setIsMuted: (isMuted) => set({ isMuted }),
   setIsDeafened: (isDeafened) => set({ isDeafened }),
+  setIsKrispEnabled: (isKrispEnabled) => {
+    localStorage.setItem('mango_krisp_enabled', isKrispEnabled.toString());
+    set({ isKrispEnabled });
+  },
   setPing: (ping) => set({ ping }),
   addSpeakingUser: (id) => set((state) => ({ speakingUsers: state.speakingUsers.includes(id) ? state.speakingUsers : [...state.speakingUsers, id] })),
   removeSpeakingUser: (id) => set((state) => ({ speakingUsers: state.speakingUsers.filter(u => u !== id) })),

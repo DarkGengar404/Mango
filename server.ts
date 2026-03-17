@@ -88,7 +88,9 @@ async function startServer() {
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: { origin: '*' },
-    maxHttpBufferSize: 1e6 // 1 MB for safety
+    maxHttpBufferSize: 1e6,
+    pingTimeout: 60000,
+    pingInterval: 25000,
   });
 
   app.use(express.json());
@@ -369,7 +371,12 @@ async function startServer() {
     
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-      socket.data.user = decoded;
+      // Verify user still exists in DB
+      const user = db.prepare('SELECT id, username, is_admin FROM users WHERE id = ?').get(decoded.id) as any;
+      if (!user) {
+        return next(new Error('User no longer exists'));
+      }
+      socket.data.user = { id: user.id, username: user.username, isAdmin: !!user.is_admin };
       next();
     } catch (error) {
       next(new Error('Authentication error'));

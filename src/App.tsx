@@ -14,7 +14,7 @@ import { loadKeyPair } from './lib/db';
 import { sounds } from './lib/sounds';
 
 export default function App() {
-  const { user, token, users, setUsers, socket, setSocket, addMessage, setMessages, addMessages, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice, activeTab, setPeerConnection, peerConnections, setLocalScreenStream, localScreenStream, screenshareSettings } = useStore();
+  const { user, setUser, token, users, setUsers, socket, setSocket, addMessage, setMessages, addMessages, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice, activeTab, setPeerConnection, peerConnections, setLocalScreenStream, localScreenStream, screenshareSettings } = useStore();
   const [showAdmin, setShowAdmin] = useState(false);
   const [showScreenshare, setShowScreenshare] = useState<{ show: boolean, mode: 'screen' | 'camera', targetUserId?: number }>({ show: false, mode: 'screen' });
 
@@ -111,6 +111,16 @@ export default function App() {
   }, [token, user, activeTab, mainRoomKey, sharedSecrets]);
 
   useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (useStore.getState().inVoice && useStore.getState().socket) {
+        useStore.getState().socket?.emit('leave_voice');
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  useEffect(() => {
     if (!token || !user) return;
 
     const fetchUsers = async () => {
@@ -123,7 +133,15 @@ export default function App() {
           if (contentType && contentType.includes('application/json')) {
             const data = await res.json();
             setUsers(data);
+            
+            // Check if current user still exists in the database
+            if (user && !data.find((u: any) => u.id === user.id)) {
+              console.log('User no longer exists in database, logging out...');
+              setUser(null, null);
+            }
           }
+        } else if (res.status === 401) {
+          setUser(null, null);
         }
       } catch (e) {
         console.error('Failed to fetch users:', e);
@@ -132,7 +150,36 @@ export default function App() {
     fetchUsers();
 
     const socketInstance = io({
-      auth: { token }
+      auth: { token },
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+    });
+
+    socketInstance.on('connect', () => {
+      console.log('Connected to server');
+      fetchUsers();
+      // Sync voice state if we think we are in voice
+      if (useStore.getState().inVoice) {
+        socketInstance.emit('join_voice');
+      }
+    });
+
+    socketInstance.on('connect_error', (err) => {
+      console.error('Socket connection error:', err.message);
+      if (err.message === 'User no longer exists' || err.message === 'Authentication error') {
+        setUser(null, null);
+      }
+    });
+
+    socketInstance.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+      if (reason === 'io server disconnect') {
+        // the disconnection was initiated by the server, you need to reconnect manually
+        socketInstance.connect();
+      }
     });
 
     socketInstance.on('users_updated', () => {

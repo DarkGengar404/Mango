@@ -4,11 +4,12 @@ import { Track } from 'livekit-client';
 import { KrispNoiseFilter, isKrispNoiseFilterSupported } from '@livekit/krisp-noise-filter';
 
 export function VoiceManager() {
-  const { socket, inVoice, user, isMuted, isDeafened, addSpeakingUser, selectedInputDevice, selectedOutputDevice, localVolumes, localMutes, setLocalStream, remoteStreams } = useStore();
+  const { socket, inVoice, user, isMuted, isDeafened, isKrispEnabled, addSpeakingUser, selectedInputDevice, selectedOutputDevice, localVolumes, localMutes, setLocalStream, remoteStreams } = useStore();
   const audioContextRef = useRef<AudioContext | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const audioElements = useRef<Record<number, HTMLAudioElement>>({});
   const originalStreamRef = useRef<MediaStream | null>(null);
+  const krispProcessorRef = useRef<any>(null);
 
   useEffect(() => {
     if (socket && inVoice) {
@@ -49,6 +50,10 @@ export function VoiceManager() {
   useEffect(() => {
     if (!inVoice) {
       setLocalStream(null);
+      if (krispProcessorRef.current) {
+        krispProcessorRef.current.dispose();
+        krispProcessorRef.current = null;
+      }
       if (audioContextRef.current) {
         if (audioContextRef.current.state !== 'closed') {
           audioContextRef.current.close().catch(console.error);
@@ -64,7 +69,7 @@ export function VoiceManager() {
           audio: {
             deviceId: selectedInputDevice ? { exact: selectedInputDevice } : undefined,
             echoCancellation: true,
-            noiseSuppression: true,
+            noiseSuppression: !isKrispEnabled,
             autoGainControl: true,
           }
         });
@@ -77,8 +82,9 @@ export function VoiceManager() {
 
         let finalStream = stream;
         try {
-          if (isKrispNoiseFilterSupported()) {
+          if (isKrispEnabled && isKrispNoiseFilterSupported()) {
             const processor = KrispNoiseFilter();
+            krispProcessorRef.current = processor;
             await processor.init({
               kind: Track.Kind.Audio,
               track: stream.getAudioTracks()[0],
@@ -89,7 +95,7 @@ export function VoiceManager() {
               console.log("[VoiceManager] Krisp noise suppression enabled");
             }
           } else {
-            console.log("[VoiceManager] Krisp noise suppression not supported in this browser");
+            console.log("[VoiceManager] Krisp noise suppression disabled or not supported");
           }
         } catch (e) {
           console.error("[VoiceManager] Failed to initialize Krisp noise suppression", e);
@@ -130,6 +136,10 @@ export function VoiceManager() {
         originalStreamRef.current.getTracks().forEach(t => t.stop());
         originalStreamRef.current = null;
       }
+      if (krispProcessorRef.current) {
+        krispProcessorRef.current.dispose();
+        krispProcessorRef.current = null;
+      }
       setLocalStream(null);
       if (audioContextRef.current) {
         if (audioContextRef.current.state !== 'closed') {
@@ -138,7 +148,7 @@ export function VoiceManager() {
         audioContextRef.current = null;
       }
     };
-  }, [inVoice, selectedInputDevice]);
+  }, [inVoice, selectedInputDevice, isKrispEnabled]);
 
   // Handle muting
   const { localStream } = useStore();

@@ -108,7 +108,11 @@ export function Auth() {
 
       setUser(data.user, data.token);
     } catch (err: any) {
-      setError(err.message);
+      if (err instanceof TypeError && err.message === 'Failed to fetch') {
+        setError('Network error: Could not reach the server. Please check your internet connection or try again in a few seconds.');
+      } else {
+        setError(err.message);
+      }
     }
   };
 

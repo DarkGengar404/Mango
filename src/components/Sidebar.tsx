@@ -28,7 +28,7 @@ function ConnectionTime({ joinedAt }: { joinedAt: number }) {
 }
 
 export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreenshare: (mode: 'screen' | 'camera') => void, onJoinScreenshare: (userId: number, mode: 'screen' | 'camera') => void }) {
-  const { user, users, activeTab, setActiveTab, setUser, socket, inVoice, setInVoice, voiceUsers, isMuted, setIsMuted, isDeafened, setIsDeafened, ping, speakingUsers, voiceStates, onlineUsers, messages, closedDMs, setClosedDMs, lastViewed, setLastViewed, videoStreams } = useStore();
+  const { user, users, activeTab, setActiveTab, setUser, socket, inVoice, setInVoice, voiceUsers, isMuted, setIsMuted, isDeafened, setIsDeafened, isKrispEnabled, setIsKrispEnabled, ping, speakingUsers, voiceStates, onlineUsers, messages, closedDMs, setClosedDMs, lastViewed, setLastViewed, videoStreams } = useStore();
   const [showSettings, setShowSettings] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ userId: number, x: number, y: number, isVoice?: boolean } | null>(null);
   const [profileModalUserId, setProfileModalUserId] = useState<number | null>(null);
@@ -56,6 +56,15 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
       setInVoice(false);
     }
   };
+
+  // Ensure we leave voice on unmount
+  useEffect(() => {
+    return () => {
+      if (inVoice) {
+        socket?.emit('leave_voice');
+      }
+    };
+  }, [inVoice, socket]);
 
   const dmUsers = React.useMemo(() => {
     if (!user) return [];
@@ -248,11 +257,21 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
           </div>
           <div className="flex items-center justify-between">
             <div className="flex gap-1">
-              <button onClick={() => setIsMuted(!isMuted)} className={clsx("p-2 rounded-lg transition-colors", isMuted ? "bg-red-500/20 text-red-400" : "hover:bg-slate-800 text-slate-400")}>
+              <button onClick={() => setIsMuted(!isMuted)} className={clsx("p-2 rounded-lg transition-colors", isMuted ? "bg-red-500/20 text-red-400" : "hover:bg-slate-800 text-slate-400")} title={isMuted ? "Unmute" : "Mute"}>
                 {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </button>
-              <button onClick={() => setIsDeafened(!isDeafened)} className={clsx("p-2 rounded-lg transition-colors", isDeafened ? "bg-red-500/20 text-red-400" : "hover:bg-slate-800 text-slate-400")}>
+              <button onClick={() => setIsDeafened(!isDeafened)} className={clsx("p-2 rounded-lg transition-colors", isDeafened ? "bg-red-500/20 text-red-400" : "hover:bg-slate-800 text-slate-400")} title={isDeafened ? "Undeafen" : "Deafen"}>
                 {isDeafened ? <Headphones className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              </button>
+              <button 
+                onClick={() => setIsKrispEnabled(!isKrispEnabled)} 
+                className={clsx(
+                  "p-2 rounded-lg transition-colors", 
+                  isKrispEnabled ? "bg-emerald-500/20 text-emerald-400" : "hover:bg-slate-800 text-slate-400"
+                )}
+                title={isKrispEnabled ? "Disable Krisp Noise Suppression" : "Enable Krisp Noise Suppression"}
+              >
+                <Zap className={clsx("w-4 h-4", isKrispEnabled && "fill-emerald-400/20")} />
               </button>
               <button 
                 onClick={() => onOpenScreenshare('screen')} 
@@ -275,7 +294,7 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
                 {videoStreams[user?.id || 0] === 'camera' ? <X className="w-4 h-4" /> : <Video className="w-4 h-4" />}
               </button>
             </div>
-            <button onClick={leaveVoice} className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors">
+            <button onClick={leaveVoice} className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors" title="Disconnect">
               <PhoneOff className="w-4 h-4" />
             </button>
           </div>
