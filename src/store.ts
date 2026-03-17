@@ -64,7 +64,7 @@ interface AppState {
   localScreenVolumes: Record<number, number>;
   localScreenMutes: Record<number, boolean>;
   lastViewed: Record<string, number>;
-  peerConnections: Record<number, RTCPeerConnection>;
+  peerConnections: Record<number, any>;
   localStream: MediaStream | null;
   localScreenStream: MediaStream | null;
   remoteVoiceStreams: Record<number, MediaStream>;
@@ -76,7 +76,7 @@ interface AppState {
   setLocalScreenStream: (stream: MediaStream | null) => void;
   setRemoteVoiceStream: (userId: number, stream: MediaStream | null) => void;
   setRemoteScreenStream: (userId: number, stream: MediaStream | null) => void;
-  setPeerConnection: (userId: number, pc: RTCPeerConnection | null) => void;
+  setPeerConnection: (userId: number, pc: any | null) => void;
   setUserStreamIds: (ids: Record<number, { voice?: string, screen?: string }>) => void;
   setUserStreamId: (userId: number, type: 'voice' | 'screen', streamId: string | null) => void;
   setMessages: (messages: Message[]) => void;

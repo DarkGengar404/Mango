@@ -9,6 +9,8 @@ const ICE_SERVERS = {
   ]
 };
 
+const PeerConnection = window.RTCPeerConnection || (window as any).webkitRTCPeerConnection || (window as any).mozRTCPeerConnection;
+
 export function WebRTCManager() {
   const { 
     socket, user, voiceUsers, videoStreams, 
@@ -18,7 +20,7 @@ export function WebRTCManager() {
     userStreamIds
   } = useStore();
 
-  const pcs = useRef<Record<number, RTCPeerConnection>>({});
+  const pcs = useRef<Record<number, any>>({});
   const localTracks = useRef<Record<string, RTCRtpSender>>({}); // pcId_trackId -> sender
   const makingOffer = useRef<Record<number, boolean>>({});
   const ignoreOffer = useRef<Record<number, boolean>>({});
@@ -69,15 +71,20 @@ export function WebRTCManager() {
   useEffect(() => {
     Object.entries(pcs.current).forEach(([idStr, pc]) => {
       const id = parseInt(idStr);
-      if (pc instanceof RTCPeerConnection) {
-        syncTracks(id, pc);
+      const peer = pc as any;
+      if (peer && typeof peer.addTrack === 'function') {
+        syncTracks(id, peer);
       }
     });
   }, [localStream, localScreenStream]);
 
   const createPeerConnection = (otherUserId: number) => {
+    if (!PeerConnection) {
+      console.error('[WebRTC] RTCPeerConnection is not supported in this browser');
+      return null;
+    }
     console.log(`[WebRTC] Creating connection to ${otherUserId}`);
-    const pc = new RTCPeerConnection(ICE_SERVERS);
+    const pc = new PeerConnection(ICE_SERVERS);
     pcs.current[otherUserId] = pc;
     setPeerConnection(otherUserId, pc);
 
@@ -154,7 +161,7 @@ export function WebRTCManager() {
     return pc;
   };
 
-  const syncTracks = (otherUserId: number, pc: RTCPeerConnection) => {
+  const syncTracks = (otherUserId: number, pc: any) => {
     const state = useStore.getState();
     const streams = [
       { stream: state.localStream, prefix: 'voice' },
