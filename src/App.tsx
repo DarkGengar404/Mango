@@ -9,7 +9,7 @@ import { Screenshare } from './components/Screenshare';
 import { VoiceManager } from './components/VoiceManager';
 import { WebRTCManager } from './components/WebRTCManager';
 import { io } from 'socket.io-client';
-import { decryptMessage, importSymmetricKey, getKeyFromDB, saveKeyToDB } from './lib/crypto';
+import { decryptMessage, importSymmetricKey, getKeyFromDB, saveKeyToDB, deriveSharedSecret, importPublicKey } from './lib/crypto';
 import { loadKeyPair } from './lib/db';
 import { sounds } from './lib/sounds';
 
@@ -56,14 +56,36 @@ export default function App() {
           for (const msg of data) {
             let decryptedText = '';
             if (msg.to === 'main' && mainRoomKey) {
-              decryptedText = await decryptMessage(mainRoomKey, msg.encryptedPayload, msg.iv);
+              try {
+                decryptedText = await decryptMessage(mainRoomKey, msg.encryptedPayload, msg.iv);
+              } catch (e) {
+                console.error('[Chat] Failed to decrypt main room history message', e);
+              }
             } else if (msg.to !== 'main') {
               const otherId = msg.from === user.id ? parseInt(msg.to) : msg.from;
-              const sharedKey = sharedSecrets[otherId];
+              let sharedKey = sharedSecrets[otherId];
+              
+              if (!sharedKey && keyPair) {
+                const otherUser = useStore.getState().users.find(u => u.id === otherId);
+                if (otherUser && otherUser.publicKey) {
+                  try {
+                    const pubKey = await importPublicKey(otherUser.publicKey);
+                    sharedKey = await deriveSharedSecret(keyPair.privateKey, pubKey);
+                    useStore.getState().setSharedSecret(otherId, sharedKey);
+                  } catch (e) {
+                    console.error(`[Chat] Failed to derive key for user ${otherId}`, e);
+                  }
+                }
+              }
+
               if (sharedKey) {
-                decryptedText = await decryptMessage(sharedKey, msg.encryptedPayload, msg.iv);
-                if (decryptedText.startsWith('MAIN_KEY:')) {
-                  decryptedText = ''; // Skip this message
+                try {
+                  decryptedText = await decryptMessage(sharedKey, msg.encryptedPayload, msg.iv);
+                  if (decryptedText.startsWith('MAIN_KEY:')) {
+                    decryptedText = ''; // Skip this message
+                  }
+                } catch (e) {
+                  console.error(`[Chat] Failed to decrypt DM history from ${otherId}`, e);
                 }
               } else {
                 console.warn(`[Chat] No shared key for user ${otherId}. Shared secrets:`, Object.keys(sharedSecrets));
@@ -217,20 +239,42 @@ export default function App() {
       let decryptedText = '';
       
       if (data.to === 'main' && mainRoomKey) {
-        decryptedText = await decryptMessage(mainRoomKey, data.encryptedPayload, data.iv);
+        try {
+          decryptedText = await decryptMessage(mainRoomKey, data.encryptedPayload, data.iv);
+        } catch (e) {
+          console.error('[Chat] Failed to decrypt main room message', e);
+        }
       } else if (data.to !== 'main') {
         const otherId = data.from === user?.id ? parseInt(data.to) : data.from;
-        const sharedKey = sharedSecrets[otherId];
+        let sharedKey = sharedSecrets[otherId];
+        
+        if (!sharedKey && keyPair) {
+          const otherUser = useStore.getState().users.find(u => u.id === otherId);
+          if (otherUser && otherUser.publicKey) {
+            try {
+              const pubKey = await importPublicKey(otherUser.publicKey);
+              sharedKey = await deriveSharedSecret(keyPair.privateKey, pubKey);
+              useStore.getState().setSharedSecret(otherId, sharedKey);
+            } catch (e) {
+              console.error(`[Chat] Failed to derive key for user ${otherId}`, e);
+            }
+          }
+        }
+
         if (sharedKey) {
-          const text = await decryptMessage(sharedKey, data.encryptedPayload, data.iv);
-          if (text.startsWith('MAIN_KEY:')) {
-            const keyBase64 = text.split(':')[1];
-            const symKey = await importSymmetricKey(keyBase64);
-            setMainRoomKey(symKey);
-            await saveKeyToDB('mainRoomKey', keyBase64);
-            return; // Don't show this as a message
-          } else {
-            decryptedText = text;
+          try {
+            const text = await decryptMessage(sharedKey, data.encryptedPayload, data.iv);
+            if (text.startsWith('MAIN_KEY:')) {
+              const keyBase64 = text.split(':')[1];
+              const symKey = await importSymmetricKey(keyBase64);
+              setMainRoomKey(symKey);
+              await saveKeyToDB('mainRoomKey', keyBase64);
+              return; // Don't show this as a message
+            } else {
+              decryptedText = text;
+            }
+          } catch (e) {
+            console.error(`[Chat] Failed to decrypt DM from ${otherId}`, e);
           }
         }
       }
@@ -345,6 +389,12 @@ export default function App() {
           }
         }} 
         onJoinScreenshare={(userId, mode) => {
+          if (!useStore.getState().inVoice) {
+            socket?.emit('join_voice');
+            socket?.emit('play_sound', 'join_voice');
+            sounds.playJoin();
+            setInVoice(true);
+          }
           if (showScreenshare.show && showScreenshare.targetUserId === userId) {
             setShowScreenshare({ show: false, mode: 'screen' });
           } else {
@@ -357,6 +407,12 @@ export default function App() {
       </div>
       <RightSidebar 
         onJoinScreenshare={(userId, mode) => {
+          if (!useStore.getState().inVoice) {
+            socket?.emit('join_voice');
+            socket?.emit('play_sound', 'join_voice');
+            sounds.playJoin();
+            setInVoice(true);
+          }
           if (showScreenshare.show && showScreenshare.targetUserId === userId) {
             setShowScreenshare({ show: false, mode: 'screen' });
           } else {

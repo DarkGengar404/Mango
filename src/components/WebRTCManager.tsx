@@ -104,13 +104,21 @@ export function WebRTCManager() {
       
       setRemoteStream(otherUserId, currentStream);
 
+      const handleRemoveTrack = () => {
+        console.log(`[WebRTC] Track ended/removed from ${otherUserId}:`, event.track.kind);
+        const latestStream = useStore.getState().remoteStreams[otherUserId];
+        if (latestStream) {
+          latestStream.removeTrack(event.track);
+          setRemoteStream(otherUserId, latestStream);
+        }
+      };
+
+      event.track.onended = handleRemoveTrack;
+
       if (event.streams && event.streams[0]) {
         event.streams[0].onremovetrack = (removeEvent) => {
-          console.log(`[WebRTC] Track removed from ${otherUserId}:`, removeEvent.track.kind);
-          const latestStream = useStore.getState().remoteStreams[otherUserId];
-          if (latestStream) {
-            latestStream.removeTrack(removeEvent.track);
-            setRemoteStream(otherUserId, latestStream);
+          if (removeEvent.track === event.track) {
+            handleRemoveTrack();
           }
         };
       }
@@ -139,9 +147,10 @@ export function WebRTCManager() {
   };
 
   const syncTracks = (otherUserId: number, pc: RTCPeerConnection) => {
+    const state = useStore.getState();
     const streams = [
-      { stream: localStream, prefix: 'voice' },
-      { stream: localScreenStream, prefix: 'screen' }
+      { stream: state.localStream, prefix: 'voice' },
+      { stream: state.localScreenStream, prefix: 'screen' }
     ];
 
     const currentTrackIds = new Set<string>();

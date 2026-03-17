@@ -1,11 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import { useStore } from '../store';
+import { Track } from 'livekit-client';
+import { KrispNoiseFilter, isKrispNoiseFilterSupported } from '@livekit/krisp-noise-filter';
 
 export function VoiceManager() {
   const { socket, inVoice, user, isMuted, isDeafened, addSpeakingUser, selectedInputDevice, selectedOutputDevice, localVolumes, localMutes, setLocalStream, remoteStreams } = useStore();
   const audioContextRef = useRef<AudioContext | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const audioElements = useRef<Record<number, HTMLAudioElement>>({});
+  const originalStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (socket && inVoice) {
@@ -65,16 +68,37 @@ export function VoiceManager() {
             autoGainControl: true,
           }
         });
-        setLocalStream(stream);
-
+        originalStreamRef.current = stream;
         const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
         if (audioCtx.state === 'suspended') {
           await audioCtx.resume();
         }
         audioContextRef.current = audioCtx;
 
+        let finalStream = stream;
+        try {
+          if (isKrispNoiseFilterSupported()) {
+            const processor = KrispNoiseFilter();
+            await processor.init({
+              kind: Track.Kind.Audio,
+              track: stream.getAudioTracks()[0],
+              audioContext: audioCtx,
+            });
+            if (processor.processedTrack) {
+              finalStream = new MediaStream([processor.processedTrack]);
+              console.log("[VoiceManager] Krisp noise suppression enabled");
+            }
+          } else {
+            console.log("[VoiceManager] Krisp noise suppression not supported in this browser");
+          }
+        } catch (e) {
+          console.error("[VoiceManager] Failed to initialize Krisp noise suppression", e);
+        }
+
+        setLocalStream(finalStream);
+
         await audioCtx.audioWorklet.addModule('/audio-processor.js');
-        const source = audioCtx.createMediaStreamSource(stream);
+        const source = audioCtx.createMediaStreamSource(finalStream);
         const workletNode = new AudioWorkletNode(audioCtx, 'audio-processor');
         workletNodeRef.current = workletNode;
 
@@ -102,6 +126,10 @@ export function VoiceManager() {
       if (useStore.getState().localStream) {
         useStore.getState().localStream?.getTracks().forEach(t => t.stop());
       }
+      if (originalStreamRef.current) {
+        originalStreamRef.current.getTracks().forEach(t => t.stop());
+        originalStreamRef.current = null;
+      }
       setLocalStream(null);
       if (audioContextRef.current) {
         if (audioContextRef.current.state !== 'closed') {
@@ -117,6 +145,11 @@ export function VoiceManager() {
   useEffect(() => {
     if (localStream) {
       localStream.getAudioTracks().forEach(track => {
+        track.enabled = !isMuted && !isDeafened;
+      });
+    }
+    if (originalStreamRef.current) {
+      originalStreamRef.current.getAudioTracks().forEach(track => {
         track.enabled = !isMuted && !isDeafened;
       });
     }
