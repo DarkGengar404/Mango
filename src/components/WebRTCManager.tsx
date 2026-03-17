@@ -14,13 +14,19 @@ export function WebRTCManager() {
     socket, user, voiceUsers, videoStreams, 
     localStream, localScreenStream,
     peerConnections, setPeerConnection,
-    setRemoteStream
+    setRemoteVoiceStream, setRemoteScreenStream,
+    userStreamIds
   } = useStore();
 
   const pcs = useRef<Record<number, RTCPeerConnection>>({});
   const localTracks = useRef<Record<string, RTCRtpSender>>({}); // pcId_trackId -> sender
   const makingOffer = useRef<Record<number, boolean>>({});
   const ignoreOffer = useRef<Record<number, boolean>>({});
+  const sdpFilter = (sdp: string) => {
+    // Maximize audio quality
+    let newSdp = sdp.replace(/a=fmtp:111 (.*)/g, 'a=fmtp:111 $1;maxaveragebitrate=128000;stereo=1;sprop-stereo=1;useinbandfec=1');
+    return newSdp;
+  };
 
   // Sync peer connections with voice/video users
   useEffect(() => {
@@ -46,7 +52,8 @@ export function WebRTCManager() {
           if (key.startsWith(`${id}_`)) delete localTracks.current[key];
         });
         setPeerConnection(id, null);
-        setRemoteStream(id, null);
+        setRemoteVoiceStream(id, null);
+        setRemoteScreenStream(id, null);
       }
     });
 
@@ -92,35 +99,23 @@ export function WebRTCManager() {
 
     pc.ontrack = (event) => {
       console.log(`[WebRTC] Received track from ${otherUserId}:`, event.track.kind);
-      
-      let currentStream = useStore.getState().remoteStreams[otherUserId];
-      if (!currentStream) {
-        currentStream = new MediaStream();
-      }
-      
-      if (!currentStream.getTracks().includes(event.track)) {
-        currentStream.addTrack(event.track);
-      }
-      
-      setRemoteStream(otherUserId, currentStream);
+      const stream = event.streams[0];
+      if (!stream) return;
 
-      const handleRemoveTrack = () => {
-        console.log(`[WebRTC] Track ended/removed from ${otherUserId}:`, event.track.kind);
-        const latestStream = useStore.getState().remoteStreams[otherUserId];
-        if (latestStream) {
-          latestStream.removeTrack(event.track);
-          setRemoteStream(otherUserId, latestStream);
+      const streamId = stream.id;
+      const userIds = useStore.getState().userStreamIds[otherUserId];
+
+      if (userIds?.voice === streamId) {
+        setRemoteVoiceStream(otherUserId, stream);
+      } else if (userIds?.screen === streamId) {
+        setRemoteScreenStream(otherUserId, stream);
+      } else {
+        // Fallback
+        if (event.track.kind === 'audio') {
+          setRemoteVoiceStream(otherUserId, stream);
+        } else {
+          setRemoteScreenStream(otherUserId, stream);
         }
-      };
-
-      event.track.onended = handleRemoveTrack;
-
-      if (event.streams && event.streams[0]) {
-        event.streams[0].onremovetrack = (removeEvent) => {
-          if (removeEvent.track === event.track) {
-            handleRemoveTrack();
-          }
-        };
       }
     };
 
@@ -128,7 +123,12 @@ export function WebRTCManager() {
       try {
         makingOffer.current[otherUserId] = true;
         console.log(`[WebRTC] Negotiation needed for ${otherUserId}`);
-        await pc.setLocalDescription();
+        const offer = await pc.createOffer();
+        const modifiedOffer = {
+          type: offer.type,
+          sdp: sdpFilter(offer.sdp || '')
+        };
+        await pc.setLocalDescription(modifiedOffer);
         socket?.emit('webrtc_signal', {
           to: otherUserId,
           signal: { sdp: pc.localDescription }
@@ -162,7 +162,20 @@ export function WebRTCManager() {
           currentTrackIds.add(key);
           if (!localTracks.current[key]) {
             console.log(`[WebRTC] Adding ${prefix} track ${track.kind} to ${otherUserId}`);
-            localTracks.current[key] = pc.addTrack(track, stream);
+            const sender = pc.addTrack(track, stream);
+            localTracks.current[key] = sender;
+            
+            // Set bitrate for video
+            if (track.kind === 'video') {
+              const params = sender.getParameters();
+              if (!params.encodings) params.encodings = [{}];
+              if (prefix === 'screen') {
+                params.encodings[0].maxBitrate = 5000000; // 5Mbps for screenshare
+              } else {
+                params.encodings[0].maxBitrate = 2500000; // 2.5Mbps for camera
+              }
+              sender.setParameters(params).catch(console.error);
+            }
           }
         });
       }
@@ -209,7 +222,12 @@ export function WebRTCManager() {
 
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           if (signal.sdp.type === 'offer') {
-            await pc.setLocalDescription();
+            const answer = await pc.createAnswer();
+            const modifiedAnswer = {
+              type: answer.type,
+              sdp: sdpFilter(answer.sdp || '')
+            };
+            await pc.setLocalDescription(modifiedAnswer);
             socket.emit('webrtc_signal', {
               to: from,
               signal: { sdp: pc.localDescription }

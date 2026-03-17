@@ -4,10 +4,10 @@ import { Track } from 'livekit-client';
 import { KrispNoiseFilter, isKrispNoiseFilterSupported } from '@livekit/krisp-noise-filter';
 
 export function VoiceManager() {
-  const { socket, inVoice, user, isMuted, isDeafened, isKrispEnabled, addSpeakingUser, selectedInputDevice, selectedOutputDevice, localVolumes, localMutes, setLocalStream, remoteStreams } = useStore();
+  const { socket, inVoice, user, isMuted, isDeafened, isKrispEnabled, addSpeakingUser, selectedInputDevice, selectedOutputDevice, localVolumes, localMutes, setLocalStream, remoteVoiceStreams } = useStore();
   const audioContextRef = useRef<AudioContext | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
-  const audioElements = useRef<Record<number, HTMLAudioElement>>({});
+  const remoteAudioNodes = useRef<Record<number, { source: MediaStreamAudioSourceNode, gain: GainNode }>>({});
   const originalStreamRef = useRef<MediaStream | null>(null);
   const krispProcessorRef = useRef<any>(null);
 
@@ -19,39 +19,44 @@ export function VoiceManager() {
 
   // Render remote audio streams
   useEffect(() => {
-    Object.entries(remoteStreams).forEach(([idStr, stream]) => {
+    if (!audioContextRef.current) return;
+    const audioCtx = audioContextRef.current;
+
+    Object.entries(remoteVoiceStreams).forEach(([idStr, stream]) => {
       const id = parseInt(idStr);
-      if (!audioElements.current[id]) {
-        const audio = new Audio();
-        audio.autoplay = true;
-        audioElements.current[id] = audio;
-      }
-      if (audioElements.current[id].srcObject !== stream) {
-        audioElements.current[id].srcObject = stream;
+      if (!remoteAudioNodes.current[id] && stream.getAudioTracks().length > 0) {
+        const source = audioCtx.createMediaStreamSource(stream);
+        const gain = audioCtx.createGain();
+        source.connect(gain);
+        gain.connect(audioCtx.destination);
+        remoteAudioNodes.current[id] = { source, gain };
       }
       
-      // Apply output device
-      if (selectedOutputDevice && (audioElements.current[id] as any).setSinkId) {
-        (audioElements.current[id] as any).setSinkId(selectedOutputDevice);
+      if (remoteAudioNodes.current[id]) {
+        const { gain } = remoteAudioNodes.current[id];
+        const volume = localVolumes[id] ?? 1;
+        const muted = localMutes[id] || isDeafened;
+        gain.gain.setTargetAtTime(muted ? 0 : volume, audioCtx.currentTime, 0.1);
       }
     });
 
-    // Cleanup audio elements for users no longer in remoteStreams
-    Object.keys(audioElements.current).forEach(idStr => {
+    // Cleanup remote audio nodes
+    Object.keys(remoteAudioNodes.current).forEach(idStr => {
       const id = parseInt(idStr);
-      if (!remoteStreams[id]) {
-        audioElements.current[id].srcObject = null;
-        audioElements.current[id].remove();
-        delete audioElements.current[id];
+      if (!remoteVoiceStreams[id]) {
+        remoteAudioNodes.current[id].source.disconnect();
+        remoteAudioNodes.current[id].gain.disconnect();
+        delete remoteAudioNodes.current[id];
       }
     });
-  }, [remoteStreams, selectedOutputDevice]);
+  }, [remoteVoiceStreams, localVolumes, localMutes, isDeafened]);
 
   useEffect(() => {
     if (!inVoice) {
       setLocalStream(null);
+      socket?.emit('set_stream_id', { type: 'voice', streamId: null });
       if (krispProcessorRef.current) {
-        krispProcessorRef.current.dispose();
+        try { krispProcessorRef.current.dispose(); } catch(e) {}
         krispProcessorRef.current = null;
       }
       if (audioContextRef.current) {
@@ -69,8 +74,10 @@ export function VoiceManager() {
           audio: {
             deviceId: selectedInputDevice ? { exact: selectedInputDevice } : undefined,
             echoCancellation: true,
-            noiseSuppression: !isKrispEnabled,
+            noiseSuppression: false,
             autoGainControl: true,
+            sampleRate: 48000,
+            channelCount: 1,
           }
         });
         originalStreamRef.current = stream;
@@ -80,11 +87,18 @@ export function VoiceManager() {
         }
         audioContextRef.current = audioCtx;
 
+        // Handle audio context state changes
+        audioCtx.onstatechange = () => {
+          console.log(`[VoiceManager] AudioContext state: ${audioCtx.state}`);
+          if (audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(console.error);
+          }
+        };
+        
         let finalStream = stream;
         try {
           if (isKrispEnabled && isKrispNoiseFilterSupported()) {
             console.log("[VoiceManager] Initializing Krisp...");
-            // KrispNoiseFilter is often a factory function that might be async or return an object
             const processor = await (KrispNoiseFilter as any)();
             krispProcessorRef.current = processor;
             await processor.init({
@@ -96,14 +110,13 @@ export function VoiceManager() {
               finalStream = new MediaStream([processor.processedTrack]);
               console.log("[VoiceManager] Krisp noise suppression enabled");
             }
-          } else {
-            console.log("[VoiceManager] Krisp noise suppression disabled or not supported");
           }
         } catch (e) {
           console.error("[VoiceManager] Failed to initialize Krisp noise suppression", e);
         }
 
         setLocalStream(finalStream);
+        socket?.emit('set_stream_id', { type: 'voice', streamId: finalStream.id });
 
         await audioCtx.audioWorklet.addModule('/audio-processor.js');
         const source = audioCtx.createMediaStreamSource(finalStream);
@@ -111,7 +124,6 @@ export function VoiceManager() {
         workletNodeRef.current = workletNode;
 
         source.connect(workletNode);
-        // workletNode.connect(audioCtx.destination); // Don't hear ourselves
 
         workletNode.port.onmessage = (e) => {
           const inputData = e.data;
@@ -155,6 +167,7 @@ export function VoiceManager() {
         krispProcessorRef.current = null;
       }
       setLocalStream(null);
+      socket?.emit('set_stream_id', { type: 'voice', streamId: null });
       if (audioContextRef.current) {
         if (audioContextRef.current.state !== 'closed') {
           audioContextRef.current.close().catch(console.error);
@@ -182,18 +195,6 @@ export function VoiceManager() {
       });
     }
   }, [localStream, isMuted, isDeafened]);
-
-  // Update audio elements volume/mute
-  useEffect(() => {
-    Object.entries(audioElements.current).forEach(([idStr, audio]) => {
-      const id = parseInt(idStr);
-      const volume = localVolumes[id] ?? 1;
-      const muted = localMutes[id] || isDeafened;
-      if (audio instanceof HTMLAudioElement) {
-        audio.volume = muted ? 0 : volume;
-      }
-    });
-  }, [localVolumes, localMutes, isDeafened]);
 
   return null;
 }

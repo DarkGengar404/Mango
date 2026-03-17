@@ -4,7 +4,7 @@ import { X, User, Mic, Volume2, Sliders, Monitor } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 
 export function UserSettings({ onClose }: { onClose: () => void }) {
-  const { user, token, selectedInputDevice, selectedOutputDevice, setSelectedInputDevice, setSelectedOutputDevice, noiseSuppressionLevel, setNoiseSuppressionLevel, inputGain, setInputGain, screenshareSettings, setScreenshareSettings } = useStore();
+  const { user, token, selectedInputDevice, selectedOutputDevice, setSelectedInputDevice, setSelectedOutputDevice, inputGain, setInputGain, screenshareSettings, setScreenshareSettings } = useStore();
   const [activeTab, setActiveTab] = useState<'profile' | 'voice'>('profile');
   const [displayName, setDisplayName] = useState(user?.displayName || user?.username || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
@@ -247,22 +247,6 @@ export function UserSettings({ onClose }: { onClose: () => void }) {
                         step="0.01" 
                         value={inputGain}
                         onChange={(e) => setInputGain(parseFloat(e.target.value))}
-                        className="w-full accent-indigo-500"
-                      />
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm text-zinc-400">Noise Suppression Level</label>
-                        <span className="text-xs text-zinc-500">{noiseSuppressionLevel}%</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="0" 
-                        max="100" 
-                        step="1" 
-                        value={noiseSuppressionLevel}
-                        onChange={(e) => setNoiseSuppressionLevel(parseInt(e.target.value))}
                         className="w-full accent-indigo-500"
                       />
                     </div>

@@ -49,7 +49,6 @@ interface AppState {
   speakingUsers: number[];
   selectedInputDevice: string;
   selectedOutputDevice: string;
-  noiseSuppressionLevel: number; // 0 to 100
   inputGain: number; // 0 to 2
   onlineUsers: number[];
   closedDMs: number[];
@@ -60,16 +59,24 @@ interface AppState {
   setScreenshareSettings: (settings: { quality: 'source' | '720p' | '1080p', fps: 30 | 60 }) => void;
   localVolumes: Record<number, number>;
   localMutes: Record<number, boolean>;
+  localScreenVolumes: Record<number, number>;
+  localScreenMutes: Record<number, boolean>;
   lastViewed: Record<string, number>;
   peerConnections: Record<number, RTCPeerConnection>;
   localStream: MediaStream | null;
   localScreenStream: MediaStream | null;
-  remoteStreams: Record<number, MediaStream>;
+  remoteVoiceStreams: Record<number, MediaStream>;
+  remoteScreenStreams: Record<number, MediaStream>;
+  
+  userStreamIds: Record<number, { voice?: string, screen?: string }>;
   
   setLocalStream: (stream: MediaStream | null) => void;
   setLocalScreenStream: (stream: MediaStream | null) => void;
-  setRemoteStream: (userId: number, stream: MediaStream | null) => void;
+  setRemoteVoiceStream: (userId: number, stream: MediaStream | null) => void;
+  setRemoteScreenStream: (userId: number, stream: MediaStream | null) => void;
   setPeerConnection: (userId: number, pc: RTCPeerConnection | null) => void;
+  setUserStreamIds: (ids: Record<number, { voice?: string, screen?: string }>) => void;
+  setUserStreamId: (userId: number, type: 'voice' | 'screen', streamId: string | null) => void;
   setMessages: (messages: Message[]) => void;
   addMessages: (messages: Message[]) => void;
   setLastViewed: (tab: string, timestamp: number) => void;
@@ -92,7 +99,6 @@ interface AppState {
   removeSpeakingUser: (id: number) => void;
   setSelectedInputDevice: (val: string) => void;
   setSelectedOutputDevice: (val: string) => void;
-  setNoiseSuppressionLevel: (val: number) => void;
   setInputGain: (val: number) => void;
   setOnlineUsers: (users: number[]) => void;
   setVoiceState: (userId: number, state: { muted: boolean, deafened: boolean }) => void;
@@ -103,11 +109,13 @@ interface AppState {
   setStreamViewer: (streamUserId: number, viewerIds: number[]) => void;
   setLocalVolume: (userId: number, volume: number) => void;
   setLocalMute: (userId: number, muted: boolean) => void;
+  setLocalScreenVolume: (userId: number, volume: number) => void;
+  setLocalScreenMute: (userId: number, muted: boolean) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
-  user: null,
-  token: null,
+  user: JSON.parse(localStorage.getItem('mango_user') || 'null'),
+  token: localStorage.getItem('mango_token'),
   users: [],
   messages: [],
   activeTab: 'main',
@@ -124,7 +132,6 @@ export const useStore = create<AppState>((set) => ({
   speakingUsers: [],
   selectedInputDevice: localStorage.getItem('mango_input_device') || '',
   selectedOutputDevice: localStorage.getItem('mango_output_device') || '',
-  noiseSuppressionLevel: parseInt(localStorage.getItem('mango_noise_suppression') || '50'),
   inputGain: parseFloat(localStorage.getItem('mango_input_gain') || '1'),
   onlineUsers: [],
   closedDMs: JSON.parse(localStorage.getItem('closedDMs') || '[]'),
@@ -135,19 +142,29 @@ export const useStore = create<AppState>((set) => ({
   setScreenshareSettings: (screenshareSettings) => set({ screenshareSettings }),
   localVolumes: {},
   localMutes: {},
+  localScreenVolumes: {},
+  localScreenMutes: {},
   lastViewed: {},
   peerConnections: {},
   localStream: null,
   localScreenStream: null,
-  remoteStreams: {},
+  remoteVoiceStreams: {},
+  remoteScreenStreams: {},
 
+  userStreamIds: {},
   setLocalStream: (localStream) => set({ localStream }),
   setLocalScreenStream: (localScreenStream) => set({ localScreenStream }),
-  setRemoteStream: (userId, stream) => set((s) => {
-    const newStreams = { ...s.remoteStreams };
+  setRemoteVoiceStream: (userId, stream) => set((s) => {
+    const newStreams = { ...s.remoteVoiceStreams };
     if (stream) newStreams[userId] = stream;
     else delete newStreams[userId];
-    return { remoteStreams: newStreams };
+    return { remoteVoiceStreams: newStreams };
+  }),
+  setRemoteScreenStream: (userId, stream) => set((s) => {
+    const newStreams = { ...s.remoteScreenStreams };
+    if (stream) newStreams[userId] = stream;
+    else delete newStreams[userId];
+    return { remoteScreenStreams: newStreams };
   }),
   setPeerConnection: (userId, pc) => set((s) => {
     const newPCs = { ...s.peerConnections };
@@ -168,7 +185,13 @@ export const useStore = create<AppState>((set) => ({
     localStorage.setItem('closedDMs', JSON.stringify(closedDMs));
     set({ closedDMs });
   },
-  setUser: (user, token) => set({ user, token }),
+  setUser: (user, token) => {
+    if (user) localStorage.setItem('mango_user', JSON.stringify(user));
+    else localStorage.removeItem('mango_user');
+    if (token) localStorage.setItem('mango_token', token);
+    else localStorage.removeItem('mango_token');
+    set({ user, token });
+  },
   setUsers: (users) => set({ users: users.map(u => ({ ...u, isAdmin: !!u.is_admin, displayName: u.display_name || u.displayName || u.username, color: u.color, glow: !!u.glow, bio: u.bio })) }),
   addMessage: (msg) => set((state) => {
     const isDM = msg.to !== 'main';
@@ -215,10 +238,6 @@ export const useStore = create<AppState>((set) => ({
     localStorage.setItem('mango_output_device', selectedOutputDevice);
     set({ selectedOutputDevice });
   },
-  setNoiseSuppressionLevel: (noiseSuppressionLevel) => {
-    localStorage.setItem('mango_noise_suppression', noiseSuppressionLevel.toString());
-    set({ noiseSuppressionLevel });
-  },
   setInputGain: (inputGain) => {
     localStorage.setItem('mango_input_gain', inputGain.toString());
     set({ inputGain });
@@ -244,4 +263,14 @@ export const useStore = create<AppState>((set) => ({
   })),
   setLocalVolume: (userId, volume) => set((s) => ({ localVolumes: { ...s.localVolumes, [userId]: volume } })),
   setLocalMute: (userId, muted) => set((s) => ({ localMutes: { ...s.localMutes, [userId]: muted } })),
+  setLocalScreenVolume: (userId, volume) => set((s) => ({ localScreenVolumes: { ...s.localScreenVolumes, [userId]: volume } })),
+  setLocalScreenMute: (userId, muted) => set((s) => ({ localScreenMutes: { ...s.localScreenMutes, [userId]: muted } })),
+  setUserStreamIds: (ids: Record<number, { voice?: string, screen?: string }>) => set({ userStreamIds: ids }),
+  setUserStreamId: (userId: number, type: 'voice' | 'screen', streamId: string | null) => set((s) => {
+    const newIds = { ...s.userStreamIds };
+    if (!newIds[userId]) newIds[userId] = {};
+    if (streamId) newIds[userId][type] = streamId;
+    else delete newIds[userId][type];
+    return { userStreamIds: newIds };
+  }),
 }));

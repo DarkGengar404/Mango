@@ -3,13 +3,16 @@ import { useStore } from '../store';
 import { MessageSquare, MicOff, Volume2, User as UserIcon } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 
-export function UserContextMenu({ userId, onClose, position, isVoiceContext, onOpenProfile }: { userId: number, onClose: () => void, position: { x: number, y: number }, isVoiceContext?: boolean, onOpenProfile?: () => void }) {
-  const { users, setActiveTab, localMutes, setLocalMute, localVolumes, setLocalVolume, user: currentUser } = useStore();
+export function UserContextMenu({ userId, onClose, position, isVoiceContext, isScreenContext, onOpenProfile }: { userId: number, onClose: () => void, position: { x: number, y: number }, isVoiceContext?: boolean, isScreenContext?: boolean, onOpenProfile?: () => void }) {
+  const { users, setActiveTab, localMutes, setLocalMute, localVolumes, setLocalVolume, localScreenVolumes, setLocalScreenVolume, localScreenMutes, setLocalScreenMute, user: currentUser } = useStore();
   const menuRef = useRef<HTMLDivElement>(null);
   
   const user = users.find(u => u.id === userId);
   const isMuted = localMutes[userId] || false;
   const volume = localVolumes[userId] ?? 1;
+
+  const isScreenMuted = localScreenMutes[userId] || false;
+  const screenVolume = localScreenVolumes[userId] ?? 1;
 
   const [adjustedPosition, setAdjustedPosition] = useState(position);
 
@@ -88,7 +91,7 @@ export function UserContextMenu({ userId, onClose, position, isVoiceContext, onO
           Profile
         </button>
         
-        {isVoiceContext && (
+        {isVoiceContext && currentUser?.id !== userId && (
           <>
             <div className="my-1 border-t border-zinc-800"></div>
             
@@ -120,6 +123,46 @@ export function UserContextMenu({ userId, onClose, position, isVoiceContext, onO
                   const val = parseFloat(e.target.value);
                   if (!isNaN(val)) {
                     setLocalVolume(userId, val);
+                  }
+                }}
+                className="w-full accent-orange-500"
+              />
+            </div>
+          </>
+        )}
+
+        {isScreenContext && currentUser?.id !== userId && (
+          <>
+            <div className="my-1 border-t border-zinc-800"></div>
+            
+            <button 
+              onClick={() => setLocalScreenMute(userId, !isScreenMuted)}
+              className="w-full flex items-center justify-between px-3 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Volume2 className="w-4 h-4" />
+                Mute Stream
+              </div>
+              <div className={twMerge("w-8 h-4 rounded-full transition-colors relative", isScreenMuted ? "bg-emerald-500" : "bg-zinc-700")}>
+                <div className={twMerge("absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all", isScreenMuted ? "left-4.5" : "left-0.5")}></div>
+              </div>
+            </button>
+
+            <div className="px-3 py-2">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-zinc-400">Stream Volume</span>
+                <span className="text-xs text-zinc-500">{Math.round(screenVolume * 100)}%</span>
+              </div>
+              <input 
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.01" 
+                value={screenVolume}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  if (!isNaN(val)) {
+                    setLocalScreenVolume(userId, val);
                   }
                 }}
                 className="w-full accent-orange-500"

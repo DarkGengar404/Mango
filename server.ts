@@ -82,6 +82,7 @@ const voiceStates = new Map<number, { muted: boolean, deafened: boolean }>();
 const voiceUsers = new Map<number, number>(); // userId -> joinedAt timestamp
 const videoStreams = new Map<number, 'screen' | 'camera'>();
 const streamViewers = new Map<number, Set<number>>(); // streamUserId -> Set of viewerIds
+const userStreamIds = new Map<number, { voice?: string, screen?: string }>();
 
 async function startServer() {
   const app = express();
@@ -218,6 +219,21 @@ async function startServer() {
     } catch (error) {
       console.error('Fetch users error:', error);
       res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/users/me', (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      const user = db.prepare('SELECT id, username, email, display_name, is_admin, public_key, avatar_url, color, glow, bio FROM users WHERE id = ?').get(decoded.id) as any;
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      
+      res.json({ id: user.id, username: user.username, email: user.email, displayName: user.display_name || user.username, isAdmin: !!user.is_admin, publicKey: user.public_key, avatar_url: user.avatar_url, color: user.color, glow: !!user.glow, bio: user.bio });
+    } catch (error) {
+      res.status(401).json({ error: 'Invalid token' });
     }
   });
 
@@ -397,6 +413,7 @@ async function startServer() {
     socket.emit('voice_users', getVoiceUsers());
     socket.emit('voice_states', Array.from(voiceStates.entries()));
     socket.emit('video_streams', Array.from(videoStreams.entries()));
+    socket.emit('stream_ids', Array.from(userStreamIds.entries()));
     socket.emit('stream_viewers', Array.from(streamViewers.entries()).map(([id, set]) => [id, Array.from(set)]));
     
     // Join a room for personal messages
@@ -451,8 +468,29 @@ async function startServer() {
     socket.on('video_stream_stop', () => {
       videoStreams.delete(socket.data.user.id);
       streamViewers.delete(socket.data.user.id);
+      const ids = userStreamIds.get(socket.data.user.id);
+      if (ids) {
+        delete ids.screen;
+        if (!ids.voice) userStreamIds.delete(socket.data.user.id);
+      }
       io.emit('video_stream_update', { userId: socket.data.user.id, mode: null });
+      io.emit('stream_ids', Array.from(userStreamIds.entries()));
       io.emit('stream_viewers_update', { streamUserId: socket.data.user.id, viewerIds: [] });
+    });
+
+    socket.on('set_stream_id', (data: { type: 'voice' | 'screen', streamId: string | null }) => {
+      let ids = userStreamIds.get(socket.data.user.id);
+      if (!ids) {
+        ids = {};
+        userStreamIds.set(socket.data.user.id, ids);
+      }
+      if (data.streamId) {
+        ids[data.type] = data.streamId;
+      } else {
+        delete ids[data.type];
+      }
+      if (Object.keys(ids).length === 0) userStreamIds.delete(socket.data.user.id);
+      io.emit('stream_ids', Array.from(userStreamIds.entries()));
     });
 
     socket.on('join_stream', (streamUserId) => {
@@ -538,6 +576,7 @@ async function startServer() {
           voiceUsers.delete(userId);
           videoStreams.delete(userId);
           streamViewers.delete(userId);
+          userStreamIds.delete(userId);
           // Remove user from all streams they were watching
           for (const [sId, viewers] of streamViewers.entries()) {
             if (viewers.has(userId)) {
@@ -562,12 +601,39 @@ async function startServer() {
       
       io.emit('online_users', Array.from(onlineUsers));
       io.emit('voice_users', getVoiceUsers());
+      io.emit('voice_states', Array.from(voiceStates.entries()));
+      io.emit('video_streams', Array.from(videoStreams.entries()));
+      io.emit('stream_ids', Array.from(userStreamIds.entries()));
     });
   });
 
   function getVoiceUsers() {
     return Array.from(voiceUsers.entries()).map(([id, joinedAt]) => ({ id, joinedAt }));
   }
+
+  // Periodic cleanup of ghost voice users
+  setInterval(() => {
+    const room = io.sockets.adapter.rooms.get('voice_general');
+    const roomUserIds = new Set<number>();
+    if (room) {
+      for (const sid of room) {
+        const s = io.sockets.sockets.get(sid);
+        if (s) roomUserIds.add(s.data.user.id);
+      }
+    }
+
+    let changed = false;
+    for (const userId of voiceUsers.keys()) {
+      if (!roomUserIds.has(userId)) {
+        voiceUsers.delete(userId);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      io.emit('voice_users', getVoiceUsers());
+    }
+  }, 10000);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {

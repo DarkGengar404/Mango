@@ -14,7 +14,7 @@ import { loadKeyPair } from './lib/db';
 import { sounds } from './lib/sounds';
 
 export default function App() {
-  const { user, setUser, token, users, setUsers, socket, setSocket, addMessage, setMessages, addMessages, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice, activeTab, setPeerConnection, peerConnections, setLocalScreenStream, localScreenStream, screenshareSettings, addSpeakingUser, removeSpeakingUser } = useStore();
+  const { user, setUser, token, users, setUsers, socket, setSocket, addMessage, setMessages, addMessages, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice, activeTab, setPeerConnection, peerConnections, setLocalScreenStream, localScreenStream, screenshareSettings, addSpeakingUser, removeSpeakingUser, setUserStreamIds, setUserStreamId } = useStore();
   const [showAdmin, setShowAdmin] = useState(false);
   const [showScreenshare, setShowScreenshare] = useState<{ show: boolean, mode: 'screen' | 'camera', targetUserId?: number }>({ show: false, mode: 'screen' });
 
@@ -119,6 +119,27 @@ export default function App() {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
+
+  useEffect(() => {
+    if (!token || user) return;
+
+    const fetchMe = async () => {
+      try {
+        const res = await fetch('/api/users/me', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data, token);
+        } else {
+          setUser(null, null);
+        }
+      } catch (e) {
+        console.error('Failed to fetch me:', e);
+      }
+    };
+    fetchMe();
+  }, [token]);
 
   useEffect(() => {
     if (!token || !user) return;
@@ -231,6 +252,14 @@ export default function App() {
 
     socketInstance.on('video_stream_update', (data: { userId: number, mode: 'screen' | 'camera' | null }) => {
       setVideoStream(data.userId, data.mode);
+    });
+
+    socketInstance.on('stream_ids', (idsArr: [number, { voice?: string, screen?: string }][]) => {
+      const ids: Record<number, { voice?: string, screen?: string }> = {};
+      for (const [id, idObj] of idsArr) {
+        ids[id] = idObj;
+      }
+      setUserStreamIds(ids);
     });
 
     socketInstance.on('stream_viewers', (viewersArr: [number, number[]][]) => {
@@ -440,9 +469,11 @@ export default function App() {
             
             if (stream) {
               setLocalScreenStream(stream);
+              socket?.emit('set_stream_id', { type: 'screen', streamId: stream.id });
               setShowScreenshare({ show: true, mode });
               stream.getVideoTracks()[0].onended = () => {
                 setLocalScreenStream(null);
+                socket?.emit('set_stream_id', { type: 'screen', streamId: null });
                 setShowScreenshare({ show: false, mode: 'screen' });
               };
             }
