@@ -135,7 +135,7 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
               {voiceUsers.map(vu => {
                 const vUser = users.find(u => u.id === vu.id);
                 if (!vUser) return null;
-                const isSpeaking = speakingUsers.includes(vu.id) && !voiceStates[vu.id]?.muted;
+                const isSpeaking = (speakingUsers || []).includes(vu.id) && !(voiceStates[vu.id]?.muted);
                 const userStream = videoStreams[vu.id];
                 return (
                   <div 
@@ -144,9 +144,16 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
                     className="flex items-center justify-between px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800/50 rounded-md cursor-pointer transition-colors"
                   >
                     <div className="flex items-center gap-2 overflow-hidden">
-                      <img src={vUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${vUser.username}`} className={twMerge("w-5 h-5 rounded-full bg-zinc-800 transition-all shrink-0", isSpeaking ? "ring-2 ring-indigo-500" : "")} />
+                      <img 
+                        src={vUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${vUser.username}`} 
+                        className={twMerge(
+                          "w-5 h-5 rounded-full bg-zinc-800 transition-all shrink-0", 
+                          isSpeaking ? "ring-2 ring-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : ""
+                        )} 
+                        referrerPolicy="no-referrer"
+                      />
                       <span 
-                        className={twMerge("truncate", isSpeaking ? "text-white" : "")}
+                        className={twMerge("truncate transition-colors", isSpeaking ? "text-emerald-400 font-medium" : "")}
                         style={{ color: vUser.color || undefined, textShadow: vUser.glow ? `0 0 8px ${vUser.color || '#fff'}` : 'none' }}
                       >
                         {vUser.displayName || vUser.username}

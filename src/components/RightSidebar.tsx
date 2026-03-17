@@ -6,7 +6,7 @@ import { UserProfileModal } from './UserProfileModal';
 import { Monitor, Video } from 'lucide-react';
 
 export function RightSidebar({ onJoinScreenshare }: { onJoinScreenshare: (userId: number, mode: 'screen' | 'camera') => void }) {
-  const { user, users, onlineUsers, setActiveTab, videoStreams } = useStore();
+  const { user, users, onlineUsers, setActiveTab, videoStreams, speakingUsers, voiceStates } = useStore();
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, userId: number } | null>(null);
   const [profileModalUserId, setProfileModalUserId] = useState<number | null>(null);
 
@@ -20,6 +20,8 @@ export function RightSidebar({ onJoinScreenshare }: { onJoinScreenshare: (userId
 
   const renderUser = (u: any, isOnline: boolean) => {
     const userStream = videoStreams[u.id];
+    const isSpeaking = (speakingUsers || []).includes(u.id) && !(voiceStates[u.id]?.muted);
+    
     return (
       <div 
         key={u.id} 
@@ -28,12 +30,19 @@ export function RightSidebar({ onJoinScreenshare }: { onJoinScreenshare: (userId
         className={twMerge("flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-zinc-800/50 cursor-pointer", !isOnline && "opacity-50")}
       >
         <div className="relative shrink-0">
-          <img src={u.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`} className="w-8 h-8 rounded-full bg-zinc-800" />
+          <img 
+            src={u.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`} 
+            className={twMerge(
+              "w-8 h-8 rounded-full bg-zinc-800 transition-all", 
+              isSpeaking ? "ring-2 ring-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : ""
+            )} 
+            referrerPolicy="no-referrer"
+          />
           <div className={twMerge("absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-zinc-950", isOnline ? "bg-emerald-500" : "bg-zinc-500")}></div>
         </div>
         <div className="flex flex-col min-w-0 flex-1">
           <span 
-            className="truncate"
+            className={twMerge("truncate transition-colors", isSpeaking ? "text-emerald-400 font-medium" : "")}
             style={{ color: u.color || undefined, textShadow: u.glow ? `0 0 8px ${u.color || '#fff'}` : 'none' }}
           >
             {u.displayName || u.username}

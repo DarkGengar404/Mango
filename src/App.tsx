@@ -14,7 +14,7 @@ import { loadKeyPair } from './lib/db';
 import { sounds } from './lib/sounds';
 
 export default function App() {
-  const { user, setUser, token, users, setUsers, socket, setSocket, addMessage, setMessages, addMessages, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice, activeTab, setPeerConnection, peerConnections, setLocalScreenStream, localScreenStream, screenshareSettings } = useStore();
+  const { user, setUser, token, users, setUsers, socket, setSocket, addMessage, setMessages, addMessages, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice, activeTab, setPeerConnection, peerConnections, setLocalScreenStream, localScreenStream, screenshareSettings, addSpeakingUser, removeSpeakingUser } = useStore();
   const [showAdmin, setShowAdmin] = useState(false);
   const [showScreenshare, setShowScreenshare] = useState<{ show: boolean, mode: 'screen' | 'camera', targetUserId?: number }>({ show: false, mode: 'screen' });
 
@@ -211,6 +211,14 @@ export default function App() {
 
     socketInstance.on('voice_state_update', (data: { userId: number, state: { muted: boolean, deafened: boolean } }) => {
       setVoiceState(data.userId, data.state);
+    });
+
+    socketInstance.on('user_speaking', (data: { userId: number, isSpeaking: boolean }) => {
+      if (data.isSpeaking) {
+        addSpeakingUser(data.userId);
+      } else {
+        removeSpeakingUser(data.userId);
+      }
     });
 
     socketInstance.on('video_streams', (streamsArr: [number, 'screen' | 'camera'][]) => {
@@ -410,7 +418,12 @@ export default function App() {
             const stream = mode === 'screen' 
               ? await navigator.mediaDevices.getDisplayMedia({
                   video: videoConstraints,
-                  audio: true
+                  audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                    suppressLocalAudioPlayback: false,
+                  } as any
                 })
               : await navigator.mediaDevices.getUserMedia({
                   video: {
@@ -418,7 +431,11 @@ export default function App() {
                     width: { ideal: 1280 },
                     height: { ideal: 720 }
                   },
-                  audio: !useStore.getState().inVoice
+                  audio: !useStore.getState().inVoice ? {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                  } : false
                 });
             
             if (stream) {

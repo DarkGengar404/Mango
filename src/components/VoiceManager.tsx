@@ -83,7 +83,9 @@ export function VoiceManager() {
         let finalStream = stream;
         try {
           if (isKrispEnabled && isKrispNoiseFilterSupported()) {
-            const processor = KrispNoiseFilter();
+            console.log("[VoiceManager] Initializing Krisp...");
+            // KrispNoiseFilter is often a factory function that might be async or return an object
+            const processor = await (KrispNoiseFilter as any)();
             krispProcessorRef.current = processor;
             await processor.init({
               kind: Track.Kind.Audio,
@@ -116,11 +118,22 @@ export function VoiceManager() {
           let sum = 0;
           for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
           const rms = Math.sqrt(sum / inputData.length);
-          if (rms > 0.01 && user) {
+          
+          const isSpeaking = rms > 0.01 && !isMuted;
+          if (isSpeaking && user) {
             addSpeakingUser(user.id);
+            if (!isSpeakingRef.current) {
+              isSpeakingRef.current = true;
+              socket?.emit('speaking', true);
+            }
+            if (speakingTimeoutRef.current) clearTimeout(speakingTimeoutRef.current);
+            speakingTimeoutRef.current = setTimeout(() => {
+              isSpeakingRef.current = false;
+              removeSpeakingUser(user.id);
+              socket?.emit('speaking', false);
+            }, 500);
           }
         };
-
       } catch (err) {
         console.error("Failed to access microphone", err);
       }
@@ -129,6 +142,7 @@ export function VoiceManager() {
     startVoice();
 
     return () => {
+      if (speakingTimeoutRef.current) clearTimeout(speakingTimeoutRef.current);
       if (useStore.getState().localStream) {
         useStore.getState().localStream?.getTracks().forEach(t => t.stop());
       }
@@ -137,7 +151,7 @@ export function VoiceManager() {
         originalStreamRef.current = null;
       }
       if (krispProcessorRef.current) {
-        krispProcessorRef.current.dispose();
+        try { krispProcessorRef.current.dispose(); } catch(e) {}
         krispProcessorRef.current = null;
       }
       setLocalStream(null);
@@ -149,6 +163,10 @@ export function VoiceManager() {
       }
     };
   }, [inVoice, selectedInputDevice, isKrispEnabled]);
+
+  const isSpeakingRef = useRef(false);
+  const speakingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const { removeSpeakingUser } = useStore();
 
   // Handle muting
   const { localStream } = useStore();

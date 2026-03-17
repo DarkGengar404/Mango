@@ -518,6 +518,10 @@ async function startServer() {
       io.emit('voice_state_update', { userId: socket.data.user.id, state });
     });
 
+    socket.on('speaking', (isSpeaking: boolean) => {
+      socket.broadcast.emit('user_speaking', { userId: socket.data.user.id, isSpeaking });
+    });
+
     socket.on('ping', (cb) => {
       if (typeof cb === 'function') cb();
     });

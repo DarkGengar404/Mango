@@ -116,7 +116,12 @@ export function UserContextMenu({ userId, onClose, position, isVoiceContext, onO
                 max="2" 
                 step="0.01" 
                 value={volume}
-                onChange={(e) => setLocalVolume(userId, parseFloat(e.target.value))}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  if (!isNaN(val)) {
+                    setLocalVolume(userId, val);
+                  }
+                }}
                 className="w-full accent-orange-500"
               />
             </div>
