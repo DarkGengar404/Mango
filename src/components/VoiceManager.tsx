@@ -4,12 +4,45 @@ import { Track } from 'livekit-client';
 import { KrispNoiseFilter, isKrispNoiseFilterSupported } from '@livekit/krisp-noise-filter';
 
 export function VoiceManager() {
-  const { socket, inVoice, user, isMuted, isDeafened, isKrispEnabled, addSpeakingUser, selectedInputDevice, selectedOutputDevice, localVolumes, localMutes, setLocalStream, remoteVoiceStreams } = useStore();
+  const { socket, inVoice, user, isMuted, isDeafened, isKrispEnabled, addSpeakingUser, selectedInputDevice, selectedOutputDevice, localVolumes, localMutes, setLocalStream, remoteVoiceStreams, refreshAudioCounter } = useStore();
   const audioContextRef = useRef<AudioContext | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
-  const remoteAudioNodes = useRef<Record<number, { source: MediaStreamAudioSourceNode, gain: GainNode }>>({});
+  const remoteAudioNodes = useRef<Record<number, { source: MediaStreamAudioSourceNode, gain: GainNode, stream: MediaStream }>>({});
+  const localSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const originalStreamRef = useRef<MediaStream | null>(null);
   const krispProcessorRef = useRef<any>(null);
+
+  // Initialize AudioContext once
+  useEffect(() => {
+    if (inVoice && !audioContextRef.current) {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = audioCtx;
+      
+      audioCtx.onstatechange = () => {
+        console.log(`[VoiceManager] AudioContext state: ${audioCtx.state}`);
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(console.error);
+        }
+      };
+
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(console.error);
+      }
+
+      if ((audioCtx as any).setSinkId && selectedOutputDevice) {
+        (audioCtx as any).setSinkId(selectedOutputDevice).catch(console.error);
+      }
+    }
+
+    return () => {
+      if (!inVoice && audioContextRef.current) {
+        if (audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close().catch(console.error);
+        }
+        audioContextRef.current = null;
+      }
+    };
+  }, [inVoice, refreshAudioCounter, selectedOutputDevice]);
 
   useEffect(() => {
     if (socket && inVoice) {
@@ -24,19 +57,27 @@ export function VoiceManager() {
 
     Object.entries(remoteVoiceStreams).forEach(([idStr, stream]) => {
       const id = parseInt(idStr);
-      if (!remoteAudioNodes.current[id] && stream.getAudioTracks().length > 0) {
+      const existing = remoteAudioNodes.current[id];
+      
+      if ((!existing || existing.stream !== stream) && stream.getAudioTracks().length > 0) {
+        if (existing) {
+          existing.source.disconnect();
+          existing.gain.disconnect();
+        }
+        
+        console.log(`[VoiceManager] Connecting audio for user ${id}, stream: ${stream.id}`);
         const source = audioCtx.createMediaStreamSource(stream);
         const gain = audioCtx.createGain();
         source.connect(gain);
         gain.connect(audioCtx.destination);
-        remoteAudioNodes.current[id] = { source, gain };
+        remoteAudioNodes.current[id] = { source, gain, stream };
       }
       
       if (remoteAudioNodes.current[id]) {
         const { gain } = remoteAudioNodes.current[id];
         const volume = localVolumes[id] ?? 1;
         const muted = localMutes[id] || isDeafened;
-        gain.gain.setTargetAtTime(muted ? 0 : volume, audioCtx.currentTime, 0.1);
+        gain.gain.setTargetAtTime(muted ? 0 : volume, audioCtx.currentTime, 0.05);
       }
     });
 
@@ -59,12 +100,6 @@ export function VoiceManager() {
         try { krispProcessorRef.current.dispose(); } catch(e) {}
         krispProcessorRef.current = null;
       }
-      if (audioContextRef.current) {
-        if (audioContextRef.current.state !== 'closed') {
-          audioContextRef.current.close().catch(console.error);
-        }
-        audioContextRef.current = null;
-      }
       return;
     }
 
@@ -81,19 +116,13 @@ export function VoiceManager() {
           }
         });
         originalStreamRef.current = stream;
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        
+        const audioCtx = audioContextRef.current;
+        if (!audioCtx) return;
+        
         if (audioCtx.state === 'suspended') {
           await audioCtx.resume();
         }
-        audioContextRef.current = audioCtx;
-
-        // Handle audio context state changes
-        audioCtx.onstatechange = () => {
-          console.log(`[VoiceManager] AudioContext state: ${audioCtx.state}`);
-          if (audioCtx.state === 'suspended') {
-            audioCtx.resume().catch(console.error);
-          }
-        };
         
         let finalStream = stream;
         try {
@@ -119,11 +148,22 @@ export function VoiceManager() {
         socket?.emit('set_stream_id', { type: 'voice', streamId: finalStream.id });
 
         await audioCtx.audioWorklet.addModule('/audio-processor.js');
+        
+        if (localSourceNodeRef.current) {
+          localSourceNodeRef.current.disconnect();
+        }
+        
         const source = audioCtx.createMediaStreamSource(finalStream);
+        localSourceNodeRef.current = source;
+        
         const workletNode = new AudioWorkletNode(audioCtx, 'audio-processor');
         workletNodeRef.current = workletNode;
 
         source.connect(workletNode);
+        const dummyGain = audioCtx.createGain();
+        dummyGain.gain.value = 0;
+        workletNode.connect(dummyGain);
+        dummyGain.connect(audioCtx.destination);
 
         workletNode.port.onmessage = (e) => {
           const inputData = e.data;
@@ -168,12 +208,6 @@ export function VoiceManager() {
       }
       setLocalStream(null);
       socket?.emit('set_stream_id', { type: 'voice', streamId: null });
-      if (audioContextRef.current) {
-        if (audioContextRef.current.state !== 'closed') {
-          audioContextRef.current.close().catch(console.error);
-        }
-        audioContextRef.current = null;
-      }
     };
   }, [inVoice, selectedInputDevice, isKrispEnabled]);
 

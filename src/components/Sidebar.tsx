@@ -281,6 +281,13 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
                 <Zap className={clsx("w-4 h-4", isKrispEnabled && "fill-emerald-400/20")} />
               </button>
               <button 
+                onClick={() => useStore.getState().refreshAudio()} 
+                className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 transition-colors"
+                title="Fix Audio (Reset Connection)"
+              >
+                <Signal className="w-4 h-4" />
+              </button>
+              <button 
                 onClick={() => onOpenScreenshare('screen')} 
                 className={clsx(
                   "p-2 rounded-lg transition-colors", 

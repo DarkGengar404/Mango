@@ -83,6 +83,7 @@ export function WebRTCManager() {
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
+        console.log(`[WebRTC] New ICE candidate for ${otherUserId}:`, event.candidate.candidate);
         socket?.emit('webrtc_signal', {
           to: otherUserId,
           signal: { candidate: event.candidate }
@@ -90,17 +91,24 @@ export function WebRTCManager() {
       }
     };
 
-    pc.onconnectionstatechange = () => {
-      console.log(`[WebRTC] Connection state to ${otherUserId}: ${pc.connectionState}`);
-      if (pc.connectionState === 'failed') {
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[WebRTC] ICE state to ${otherUserId}: ${pc.iceConnectionState}`);
+      if (pc.iceConnectionState === 'failed') {
         pc.restartIce();
       }
     };
 
+    pc.onconnectionstatechange = () => {
+      console.log(`[WebRTC] Connection state to ${otherUserId}: ${pc.connectionState}`);
+    };
+
     pc.ontrack = (event) => {
-      console.log(`[WebRTC] Received track from ${otherUserId}:`, event.track.kind);
+      console.log(`[WebRTC] Received track from ${otherUserId}:`, event.track.kind, "Stream ID:", event.streams[0]?.id);
       const stream = event.streams[0];
-      if (!stream) return;
+      if (!stream) {
+        console.warn(`[WebRTC] No stream found for track from ${otherUserId}`);
+        return;
+      }
 
       const streamId = stream.id;
       const userIds = useStore.getState().userStreamIds[otherUserId];

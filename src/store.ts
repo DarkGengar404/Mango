@@ -111,6 +111,8 @@ interface AppState {
   setLocalMute: (userId: number, muted: boolean) => void;
   setLocalScreenVolume: (userId: number, volume: number) => void;
   setLocalScreenMute: (userId: number, muted: boolean) => void;
+  refreshAudioCounter: number;
+  refreshAudio: () => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -273,4 +275,6 @@ export const useStore = create<AppState>((set) => ({
     else delete newIds[userId][type];
     return { userStreamIds: newIds };
   }),
+  refreshAudioCounter: 0,
+  refreshAudio: () => set((s) => ({ refreshAudioCounter: s.refreshAudioCounter + 1 })),
 }));

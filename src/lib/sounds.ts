@@ -10,52 +10,58 @@ class SoundManager {
     }
   }
 
-  private playTone(freqs: number[], duration: number = 0.1, type: OscillatorType = 'sine') {
+  private playAurora(freqs: number[], duration: number = 0.5, volume: number = 0.3) {
     this.init();
     if (!this.ctx) return;
 
     const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+    const masterGain = this.ctx.createGain();
+    masterGain.connect(this.ctx.destination);
+    
+    masterGain.gain.setValueAtTime(0, now);
+    masterGain.gain.linearRampToValueAtTime(volume, now + 0.05);
+    masterGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
-    osc.type = type;
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(0.1, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-
-    freqs.forEach((f, i) => {
-      osc.frequency.setValueAtTime(f, now + (i * duration / freqs.length));
+    freqs.forEach((freq, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      
+      osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.05, now + duration);
+      
+      gain.gain.setValueAtTime(0.2, now);
+      
+      osc.connect(gain);
+      gain.connect(masterGain);
+      
+      osc.start(now);
+      osc.stop(now + duration);
     });
-
-    osc.start(now);
-    osc.stop(now + duration);
   }
 
   playJoin() {
-    this.playTone([440, 880], 0.2);
+    this.playAurora([261.63, 329.63, 392.00, 523.25], 0.8, 0.4); // C major chord
   }
 
   playLeave() {
-    this.playTone([880, 440], 0.2);
+    this.playAurora([523.25, 392.00, 329.63, 261.63], 0.8, 0.4); // Descending C major
   }
 
   playStartShare() {
-    this.playTone([660, 990], 0.15);
+    this.playAurora([440, 554.37, 659.25], 0.6, 0.3); // A major
   }
 
   playStopShare() {
-    this.playTone([990, 660], 0.15);
+    this.playAurora([659.25, 554.37, 440], 0.6, 0.3); // Descending A major
   }
 
   playJoinStream() {
-    this.playTone([880, 880], 0.1, 'square');
+    this.playAurora([587.33, 739.99, 880], 0.4, 0.3); // D major
   }
 
   playLeaveStream() {
-    this.playTone([440, 440], 0.1, 'square');
+    this.playAurora([880, 739.99, 587.33], 0.4, 0.3); // Descending D major
   }
 }
 
