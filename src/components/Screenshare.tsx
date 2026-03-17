@@ -27,10 +27,11 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
     }
 
     if (videoRef.current.srcObject !== streamToRender) {
-      console.log("[Screenshare] Setting srcObject to stream:", streamToRender?.id);
+      console.log("[Screenshare] Setting srcObject to stream:", streamToRender?.id, "Tracks:", streamToRender?.getTracks().length);
       videoRef.current.srcObject = streamToRender;
       videoRef.current.muted = true; // Ensure muted for autoplay
       if (streamToRender) {
+        console.log("[Screenshare] Stream tracks:", streamToRender.getTracks().map(t => t.kind));
         videoRef.current.play().catch(e => {
           if (e.name !== 'AbortError') {
             console.error("[Screenshare] Immediate play failed", e);
@@ -47,6 +48,20 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
       } else {
         videoRef.current.onloadedmetadata = null;
       }
+    }
+    
+    if (streamToRender) {
+      const handleAddTrack = () => {
+        console.log("[Screenshare] Track added to stream, playing video");
+        if (videoRef.current) {
+          videoRef.current.srcObject = streamToRender;
+          videoRef.current.play().catch(console.error);
+        }
+      };
+      streamToRender.addEventListener('addtrack', handleAddTrack);
+      return () => {
+        streamToRender.removeEventListener('addtrack', handleAddTrack);
+      };
     }
   }, [localScreenStream, remoteStreams, targetUserId, isFullscreen]);
 

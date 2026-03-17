@@ -20,6 +20,7 @@ export function WebRTCManager() {
   const pcs = useRef<Record<number, RTCPeerConnection>>({});
   const localTracks = useRef<Record<string, RTCRtpSender>>({}); // pcId_trackId -> sender
   const makingOffer = useRef<Record<number, boolean>>({});
+  const ignoreOffer = useRef<Record<number, boolean>>({});
 
   // Sync peer connections with voice/video users
   useEffect(() => {
@@ -39,6 +40,7 @@ export function WebRTCManager() {
         pcs.current[id].close();
         delete pcs.current[id];
         delete makingOffer.current[id];
+        delete ignoreOffer.current[id];
         // Cleanup localTracks for this user
         Object.keys(localTracks.current).forEach(key => {
           if (key.startsWith(`${id}_`)) delete localTracks.current[key];
@@ -91,12 +93,16 @@ export function WebRTCManager() {
     pc.ontrack = (event) => {
       console.log(`[WebRTC] Received track from ${otherUserId}:`, event.track.kind);
       
-      const currentStream = useStore.getState().remoteStreams[otherUserId] || new MediaStream();
+      let currentStream = useStore.getState().remoteStreams[otherUserId];
+      if (!currentStream) {
+        currentStream = new MediaStream();
+      }
+      
       if (!currentStream.getTracks().includes(event.track)) {
         currentStream.addTrack(event.track);
       }
       
-      setRemoteStream(otherUserId, new MediaStream(currentStream.getTracks()));
+      setRemoteStream(otherUserId, currentStream);
 
       if (event.streams && event.streams[0]) {
         event.streams[0].onremovetrack = (removeEvent) => {
@@ -104,7 +110,7 @@ export function WebRTCManager() {
           const latestStream = useStore.getState().remoteStreams[otherUserId];
           if (latestStream) {
             latestStream.removeTrack(removeEvent.track);
-            setRemoteStream(otherUserId, new MediaStream(latestStream.getTracks()));
+            setRemoteStream(otherUserId, latestStream);
           }
         };
       }
@@ -112,14 +118,9 @@ export function WebRTCManager() {
 
     pc.onnegotiationneeded = async () => {
       try {
-        if (makingOffer.current[otherUserId]) return;
         makingOffer.current[otherUserId] = true;
-        
         console.log(`[WebRTC] Negotiation needed for ${otherUserId}`);
-        const offer = await pc.createOffer();
-        if (pc.signalingState !== 'stable') return;
-        
-        await pc.setLocalDescription(offer);
+        await pc.setLocalDescription();
         socket?.emit('webrtc_signal', {
           to: otherUserId,
           signal: { sdp: pc.localDescription }
@@ -175,7 +176,7 @@ export function WebRTCManager() {
 
   // Handle incoming signals
   useEffect(() => {
-    if (!socket) return;
+    if (!socket || !user) return;
 
     const handleSignal = async (data: { from: number, signal: any }) => {
       const { from, signal } = data;
@@ -187,17 +188,32 @@ export function WebRTCManager() {
 
       try {
         if (signal.sdp) {
+          const polite = user.id > from;
+          const offerCollision = signal.sdp.type === 'offer' && 
+            (makingOffer.current[from] || pc.signalingState !== 'stable');
+            
+          ignoreOffer.current[from] = !polite && offerCollision;
+          if (ignoreOffer.current[from]) {
+            console.log(`[WebRTC] Ignoring colliding offer from ${from}`);
+            return;
+          }
+
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           if (signal.sdp.type === 'offer') {
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
+            await pc.setLocalDescription();
             socket.emit('webrtc_signal', {
               to: from,
               signal: { sdp: pc.localDescription }
             });
           }
         } else if (signal.candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          } catch (err) {
+            if (!ignoreOffer.current[from]) {
+              console.error(`[WebRTC] Error adding ICE candidate from ${from}:`, err);
+            }
+          }
         }
       } catch (err) {
         console.error(`[WebRTC] Signal error from ${from}:`, err);
@@ -208,7 +224,7 @@ export function WebRTCManager() {
     return () => {
       socket.off('webrtc_signal', handleSignal);
     };
-  }, [socket]);
+  }, [socket, user]);
 
   return null;
 }

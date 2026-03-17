@@ -156,7 +156,9 @@ export const useStore = create<AppState>((set) => ({
   addMessages: (messages) => set((state) => {
     const existingIds = new Set(state.messages.map(m => m.id));
     const newMessages = messages.filter(m => !existingIds.has(m.id));
-    return { messages: [...state.messages, ...newMessages] };
+    const allMessages = [...state.messages, ...newMessages];
+    allMessages.sort((a, b) => a.timestamp - b.timestamp);
+    return { messages: allMessages };
   }),
   setLastViewed: (tab, timestamp) => set((s) => ({ lastViewed: { ...s.lastViewed, [tab]: timestamp } })),
   setClosedDMs: (closedDMs) => {

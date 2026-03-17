@@ -57,6 +57,27 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
     }
   };
 
+  const dmUsers = React.useMemo(() => {
+    if (!user) return [];
+    const userIdStr = user.id.toString();
+    return users.filter(u => {
+      if (u.id === user.id) return false;
+      if (closedDMs.includes(u.id)) return false;
+      const uIdStr = u.id.toString();
+      const hasMessages = messages.some(m => m.to !== 'main' && ((m.from === u.id && m.to.toString() === userIdStr) || (m.from === user.id && m.to.toString() === uIdStr)));
+      const isActive = activeTab === uIdStr;
+      return hasMessages || isActive;
+    }).sort((a, b) => {
+      const aIdStr = a.id.toString();
+      const bIdStr = b.id.toString();
+      const aMsgs = messages.filter(m => m.to !== 'main' && ((m.from === a.id && m.to.toString() === userIdStr) || (m.from === user.id && m.to.toString() === aIdStr)));
+      const bMsgs = messages.filter(m => m.to !== 'main' && ((m.from === b.id && m.to.toString() === userIdStr) || (m.from === user.id && m.to.toString() === bIdStr)));
+      const aLatest = aMsgs.length > 0 ? aMsgs[aMsgs.length - 1].timestamp : 0;
+      const bLatest = bMsgs.length > 0 ? bMsgs[bMsgs.length - 1].timestamp : 0;
+      return bLatest - aLatest;
+    });
+  }, [users, user, closedDMs, messages, activeTab]);
+
   return (
     <div className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col h-screen">
       <div className="p-4 border-b border-slate-800 flex items-center justify-between">
@@ -67,7 +88,7 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
           <span className="font-bold text-white tracking-tight text-lg">Aurora</span>
         </div>
       </div>
-
+      
       <div className="flex-1 overflow-y-auto py-4">
         <div className="px-3 mb-2">
           <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2 px-2">Rooms</h3>
@@ -147,89 +168,77 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
         </div>
 
         <div className="px-3 mt-6">
-          <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2 px-2">Private Messages</h3>
+          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">Private Messages</h3>
           <div className="space-y-1">
-            {users.filter(u => {
-              if (u.id === user?.id) return false;
-              if (closedDMs.includes(u.id)) return false;
-              // Show users we have messages with OR the currently active private chat
-              const hasMessages = messages.some(m => m.to !== 'main' && ((m.from === u.id && m.to.toString() === user?.id.toString()) || (m.from === user?.id && m.to.toString() === u.id.toString())));
-              const isActive = activeTab === u.id.toString();
-              return hasMessages || isActive;
-            }).sort((a, b) => {
-              // Sort by latest message
-              const aMsgs = messages.filter(m => m.to !== 'main' && ((m.from === a.id && m.to.toString() === user?.id.toString()) || (m.from === user?.id && m.to.toString() === a.id.toString())));
-              const bMsgs = messages.filter(m => m.to !== 'main' && ((m.from === b.id && m.to.toString() === user?.id.toString()) || (m.from === user?.id && m.to.toString() === b.id.toString())));
-              const aLatest = aMsgs.length > 0 ? aMsgs[aMsgs.length - 1].timestamp : 0;
-              const bLatest = bMsgs.length > 0 ? bMsgs[bMsgs.length - 1].timestamp : 0;
-              return bLatest - aLatest;
-            }).map(u => {
-              const isOnline = onlineUsers.includes(u.id);
-              const uMsgs = messages.filter(m => m.to !== 'main' && ((m.from === u.id && m.to.toString() === user?.id.toString()) || (m.from === user?.id && m.to.toString() === u.id.toString())));
-              const lastViewedTime = lastViewed[u.id.toString()] || 0;
-              const unreadCount = uMsgs.filter(m => m.from === u.id && m.timestamp > lastViewedTime).length;
-              
-              return (
-                <div key={u.id} className="relative group">
-                  <button
-                    onClick={() => {
-                      setActiveTab(u.id.toString());
-                      setLastViewed(u.id.toString(), Date.now());
-                    }}
-                    onContextMenu={(e) => handleUserClick(e, u.id)}
-                    className={twMerge(
-                      "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                      activeTab === u.id.toString() ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200"
-                    )}
-                  >
-                    <div className="relative shrink-0">
-                      <img 
-                        src={u.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`} 
-                        className="w-8 h-8 rounded-full bg-zinc-800" 
-                      />
-                      <div className={twMerge(
-                        "absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-zinc-950 rounded-full",
-                        isOnline ? "bg-indigo-500" : "bg-zinc-600"
-                      )} />
+            {dmUsers.map(u => {
+            const isOnline = onlineUsers.includes(u.id);
+            const userIdStr = user?.id.toString() || '';
+            const uIdStr = u.id.toString();
+            const uMsgs = messages.filter(m => m.to !== 'main' && ((m.from === u.id && m.to.toString() === userIdStr) || (m.from === user?.id && m.to.toString() === uIdStr)));
+            const lastViewedTime = lastViewed[uIdStr] || 0;
+            const unreadCount = uMsgs.filter(m => m.from === u.id && m.timestamp > lastViewedTime).length;
+            
+            return (
+              <div key={u.id} className="relative group">
+                <button
+                  onClick={() => {
+                    setActiveTab(u.id.toString());
+                    setLastViewed(u.id.toString(), Date.now());
+                  }}
+                  onContextMenu={(e) => handleUserClick(e, u.id)}
+                  className={twMerge(
+                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                    activeTab === u.id.toString() ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
+                  )}
+                >
+                  <div className="relative shrink-0">
+                    <img 
+                      src={u.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`} 
+                      className="w-8 h-8 rounded-full bg-slate-800" 
+                    />
+                    <div className={twMerge(
+                      "absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-slate-950 rounded-full",
+                      isOnline ? "bg-indigo-500" : "bg-slate-600"
+                    )} />
+                  </div>
+                  <div className="flex flex-col items-start min-w-0 flex-1">
+                    <span 
+                      className={twMerge("truncate w-full text-left", unreadCount > 0 && activeTab !== u.id.toString() ? "font-bold text-white" : "")}
+                      style={{ 
+                        color: u.color || undefined,
+                        textShadow: u.glow ? `0 0 8px ${u.color || '#fff'}` : 'none'
+                      }}
+                    >
+                      {u.displayName || u.username}
+                    </span>
+                  </div>
+                  {unreadCount > 0 && activeTab !== u.id.toString() && (
+                    <div className="bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
+                      {unreadCount > 99 ? '99+' : unreadCount}
                     </div>
-                    <div className="flex flex-col items-start min-w-0 flex-1">
-                      <span 
-                        className={twMerge("truncate w-full text-left", unreadCount > 0 && activeTab !== u.id.toString() ? "font-bold text-white" : "")}
-                        style={{ 
-                          color: u.color || undefined,
-                          textShadow: u.glow ? `0 0 8px ${u.color || '#fff'}` : 'none'
-                        }}
-                      >
-                        {u.displayName || u.username}
-                      </span>
-                    </div>
-                    {unreadCount > 0 && activeTab !== u.id.toString() && (
-                      <div className="bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </div>
-                    )}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setClosedDMs([...closedDMs, u.id]);
-                      if (activeTab === u.id.toString()) {
-                        setActiveTab('main');
-                      }
-                    }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+                  )}
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setClosedDMs([...closedDMs, u.id]);
+                    if (activeTab === u.id.toString()) {
+                      setActiveTab('main');
+                    }
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-300 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
-
+      </div>
+      
       {inVoice && (
-        <div className="px-3 py-3 bg-zinc-900/50 border-t border-zinc-800/50 flex flex-col gap-2">
+        <div className="px-3 py-3 bg-slate-900/50 border-t border-slate-800/50 flex flex-col gap-2">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2 text-indigo-400">
               <Signal className="w-3 h-3" />
@@ -239,17 +248,17 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
           </div>
           <div className="flex items-center justify-between">
             <div className="flex gap-1">
-              <button onClick={() => setIsMuted(!isMuted)} className={clsx("p-2 rounded-lg transition-colors", isMuted ? "bg-red-500/20 text-red-400" : "hover:bg-zinc-800 text-zinc-400")}>
+              <button onClick={() => setIsMuted(!isMuted)} className={clsx("p-2 rounded-lg transition-colors", isMuted ? "bg-red-500/20 text-red-400" : "hover:bg-slate-800 text-slate-400")}>
                 {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </button>
-              <button onClick={() => setIsDeafened(!isDeafened)} className={clsx("p-2 rounded-lg transition-colors", isDeafened ? "bg-red-500/20 text-red-400" : "hover:bg-zinc-800 text-zinc-400")}>
+              <button onClick={() => setIsDeafened(!isDeafened)} className={clsx("p-2 rounded-lg transition-colors", isDeafened ? "bg-red-500/20 text-red-400" : "hover:bg-slate-800 text-slate-400")}>
                 {isDeafened ? <Headphones className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
               </button>
               <button 
                 onClick={() => onOpenScreenshare('screen')} 
                 className={clsx(
                   "p-2 rounded-lg transition-colors", 
-                  videoStreams[user?.id || 0] === 'screen' ? "bg-red-500 text-white" : "hover:bg-zinc-800 text-zinc-400"
+                  videoStreams[user?.id || 0] === 'screen' ? "bg-red-500 text-white" : "hover:bg-slate-800 text-slate-400"
                 )} 
                 title={videoStreams[user?.id || 0] === 'screen' ? "Stop Sharing" : "Share Screen"}
               >
@@ -259,7 +268,7 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
                 onClick={() => onOpenScreenshare('camera')} 
                 className={clsx(
                   "p-2 rounded-lg transition-colors", 
-                  videoStreams[user?.id || 0] === 'camera' ? "bg-red-500 text-white" : "hover:bg-zinc-800 text-zinc-400"
+                  videoStreams[user?.id || 0] === 'camera' ? "bg-red-500 text-white" : "hover:bg-slate-800 text-slate-400"
                 )} 
                 title={videoStreams[user?.id || 0] === 'camera' ? "Stop Sharing" : "Share Camera"}
               >
@@ -273,21 +282,21 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
         </div>
       )}
 
-      <div className="p-4 border-t border-zinc-800 bg-zinc-950">
+      <div className="p-4 border-t border-slate-800 bg-slate-950">
         <div className="flex items-center gap-3 mb-4">
-          <img src={user?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.username}`} className="w-10 h-10 rounded-full bg-zinc-800" />
+          <img src={user?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.username}`} className="w-10 h-10 rounded-full bg-slate-800" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-white truncate">{user?.displayName || user?.username}</p>
-            <p className="text-xs text-zinc-500 truncate">{user?.isAdmin ? 'Administrator' : 'Member'}</p>
+            <p className="text-xs text-slate-500 truncate">{user?.isAdmin ? 'Administrator' : 'Member'}</p>
           </div>
-          <button onClick={() => setShowSettings(true)} className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors">
+          <button onClick={() => setShowSettings(true)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors">
             <Settings className="w-4 h-4" />
           </button>
         </div>
         
         <div className="flex gap-2">
           {user?.isAdmin && (
-            <button className="flex-1 flex items-center justify-center gap-2 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-medium transition-colors">
+            <button className="flex-1 flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition-colors">
               <Shield className="w-4 h-4" />
               Admin
             </button>

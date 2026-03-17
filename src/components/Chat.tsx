@@ -127,8 +127,9 @@ export function Chat() {
 
   const filteredMessages = messages.filter(m => {
     if (activeTab === 'main') return m.to === 'main';
+    const userIdStr = user?.id.toString() || '';
     return m.to !== 'main' && (
-      (m.from === parseInt(activeTab) && m.to.toString() === user?.id.toString()) ||
+      (m.from === parseInt(activeTab) && m.to.toString() === userIdStr) ||
       (m.from === user?.id && m.to.toString() === activeTab)
     );
   });

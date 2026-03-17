@@ -322,11 +322,11 @@ async function startServer() {
 
       let stmt;
       if (to === 'main') {
-        stmt = db.prepare('SELECT from_id as "from", to_id as "to", encrypted_payload as encryptedPayload, iv, timestamp FROM messages WHERE to_id = "main" ORDER BY timestamp ASC LIMIT 100');
+        stmt = db.prepare('SELECT id, from_id as "from", to_id as "to", encrypted_payload as encryptedPayload, iv, timestamp FROM messages WHERE to_id = "main" ORDER BY timestamp ASC LIMIT 100');
         res.json(stmt.all());
       } else if (to) {
         const targetId = to.toString();
-        stmt = db.prepare('SELECT from_id as "from", to_id as "to", encrypted_payload as encryptedPayload, iv, timestamp FROM messages WHERE (from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?) ORDER BY timestamp ASC LIMIT 100');
+        stmt = db.prepare('SELECT id, from_id as "from", to_id as "to", encrypted_payload as encryptedPayload, iv, timestamp FROM messages WHERE (from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?) ORDER BY timestamp ASC LIMIT 100');
         res.json(stmt.all(decoded.id, targetId, targetId, decoded.id.toString()));
       } else {
         res.status(400).json({ error: 'Missing "to" parameter' });
@@ -403,17 +403,19 @@ async function startServer() {
       if (!data.encryptedPayload || !data.iv || !data.to) return;
 
       const timestamp = Date.now();
+      
+      // Persist message
+      const insert = db.prepare('INSERT INTO messages (from_id, to_id, encrypted_payload, iv, timestamp) VALUES (?, ?, ?, ?, ?)');
+      const info = insert.run(socket.data.user.id, data.to.toString(), data.encryptedPayload, data.iv, timestamp);
+
       const payload = {
+        id: info.lastInsertRowid,
         from: socket.data.user.id,
         to: data.to,
         encryptedPayload: data.encryptedPayload,
         iv: data.iv,
         timestamp
       };
-
-      // Persist message
-      const insert = db.prepare('INSERT INTO messages (from_id, to_id, encrypted_payload, iv, timestamp) VALUES (?, ?, ?, ?, ?)');
-      insert.run(socket.data.user.id, data.to.toString(), data.encryptedPayload, data.iv, timestamp);
 
       if (data.to === 'main') {
         io.emit('message', payload);

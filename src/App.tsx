@@ -65,11 +65,13 @@ export default function App() {
                 if (decryptedText.startsWith('MAIN_KEY:')) {
                   decryptedText = ''; // Skip this message
                 }
+              } else {
+                console.warn(`[Chat] No shared key for user ${otherId}. Shared secrets:`, Object.keys(sharedSecrets));
               }
             }
             if (decryptedText) {
               history.push({
-                id: Math.random().toString(36).substring(7),
+                id: msg.id.toString(),
                 from: msg.from,
                 to: msg.to,
                 text: decryptedText,
@@ -235,7 +237,7 @@ export default function App() {
 
       if (decryptedText) {
         addMessage({
-          id: Math.random().toString(36).substring(7),
+          id: data.id ? data.id.toString() : Math.random().toString(36).substring(7),
           from: data.from,
           to: data.to,
           text: decryptedText,
