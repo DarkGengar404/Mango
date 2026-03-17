@@ -1,15 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
-import { MonitorOff, X, VideoOff, Maximize2, Minimize2, Eye, Settings2, Volume2, VolumeX } from 'lucide-react';
+import { MonitorOff, X, VideoOff, Maximize2, Minimize2, Eye, Settings2, Volume2, VolumeX, RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { sounds } from '../lib/sounds';
+import { UserContextMenu } from './UserContextMenu';
 
 export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => void, mode: 'screen' | 'camera', targetUserId?: number }) {
-  const { socket, user, users, streamViewers, localScreenStream, remoteScreenStreams, setLocalScreenStream, screenshareSettings, setScreenshareSettings, localScreenVolumes, setLocalScreenVolume, localScreenMutes, setLocalScreenMute } = useStore();
+  const { socket, user, users, streamViewers, localScreenStream, remoteScreenStreams, setLocalScreenStream, screenshareSettings, setScreenshareSettings, localScreenVolumes, setLocalScreenVolume, localScreenMutes, setLocalScreenMute, facingMode, setFacingMode } = useStore();
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showQualitySettings, setShowQualitySettings] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ userId: number, x: number, y: number } | null>(null);
 
   const viewers = streamViewers[targetUserId || user?.id || 0] || [];
   const viewerNames = viewers.map(id => users.find(u => u.id === id)?.displayName || 'Unknown').join(', ');
@@ -128,6 +130,15 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
           </h2>
         </div>
         <div className="flex gap-2">
+          {!targetUserId && mode === 'camera' && (
+            <button 
+              onClick={() => setFacingMode(facingMode === 'user' ? 'environment' : 'user')} 
+              className="text-zinc-400 hover:text-white p-1"
+              title="Switch Camera"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          )}
           {!targetUserId && (
             <div className="relative">
               <button onClick={() => setShowQualitySettings(!showQualitySettings)} className="text-zinc-400 hover:text-white p-1">
@@ -171,7 +182,15 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
         </div>
       </div>
       
-      <div className="flex-1 bg-black flex items-center justify-center overflow-hidden relative">
+      <div 
+        className="flex-1 bg-black flex items-center justify-center overflow-hidden relative group"
+        onContextMenu={(e) => {
+          if (targetUserId) {
+            e.preventDefault();
+            setContextMenu({ userId: targetUserId, x: e.clientX, y: e.clientY });
+          }
+        }}
+      >
         {viewers.length > 0 && (
           <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 bg-black/60 px-2 py-1 rounded text-[10px] text-zinc-300 backdrop-blur-sm border border-white/5">
             <Eye className="w-3 h-3 text-emerald-400" />
@@ -218,6 +237,14 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
           )}
         </div>
       </div>
+      {contextMenu && (
+        <UserContextMenu 
+          userId={contextMenu.userId} 
+          position={{ x: contextMenu.x, y: contextMenu.y }} 
+          onClose={() => setContextMenu(null)} 
+          isScreenContext
+        />
+      )}
     </>
   );
 

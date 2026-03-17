@@ -57,6 +57,8 @@ interface AppState {
   streamViewers: Record<number, number[]>; // userId -> viewerIds
   screenshareSettings: { quality: 'source' | '720p' | '1080p', fps: 30 | 60 };
   setScreenshareSettings: (settings: { quality: 'source' | '720p' | '1080p', fps: 30 | 60 }) => void;
+  facingMode: 'user' | 'environment';
+  setFacingMode: (mode: 'user' | 'environment') => void;
   localVolumes: Record<number, number>;
   localMutes: Record<number, boolean>;
   localScreenVolumes: Record<number, number>;
@@ -142,6 +144,8 @@ export const useStore = create<AppState>((set) => ({
   streamViewers: {},
   screenshareSettings: { quality: 'source', fps: 30 },
   setScreenshareSettings: (screenshareSettings) => set({ screenshareSettings }),
+  facingMode: 'user',
+  setFacingMode: (facingMode) => set({ facingMode }),
   localVolumes: {},
   localMutes: {},
   localScreenVolumes: {},

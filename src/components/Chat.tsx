@@ -35,7 +35,7 @@ export function Chat() {
     const deriveKeys = async () => {
       for (const u of users) {
         const pubKeyStr = u.public_key || u.publicKey;
-        if (u.id === user?.id || !pubKeyStr) continue;
+        if (!pubKeyStr) continue;
         
         // Skip if we already derived the key for THIS specific public key string
         if (sharedSecrets[u.id] && derivedPublicKeys.current[u.id] === pubKeyStr) continue;

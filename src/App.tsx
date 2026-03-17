@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useStore } from './store';
 import { Auth } from './components/Auth';
 import { Sidebar } from './components/Sidebar';
@@ -14,7 +14,7 @@ import { loadKeyPair } from './lib/db';
 import { sounds } from './lib/sounds';
 
 export default function App() {
-  const { user, setUser, token, users, setUsers, socket, setSocket, addMessage, setMessages, addMessages, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice, activeTab, setPeerConnection, peerConnections, setLocalScreenStream, localScreenStream, screenshareSettings, addSpeakingUser, removeSpeakingUser, setUserStreamIds, setUserStreamId } = useStore();
+  const { user, setUser, token, users, setUsers, socket, setSocket, addMessage, setMessages, addMessages, keyPair, setKeyPair, sharedSecrets, mainRoomKey, setMainRoomKey, voiceUsers, setVoiceUsers, setPing, onlineUsers, setOnlineUsers, setVoiceStates, setVoiceState, setVideoStreams, setVideoStream, setStreamViewers, setStreamViewer, inVoice, setInVoice, activeTab, setPeerConnection, peerConnections, setLocalScreenStream, localScreenStream, screenshareSettings, addSpeakingUser, removeSpeakingUser, setUserStreamIds, setUserStreamId, facingMode } = useStore();
   const [showAdmin, setShowAdmin] = useState(false);
   const [showScreenshare, setShowScreenshare] = useState<{ show: boolean, mode: 'screen' | 'camera', targetUserId?: number }>({ show: false, mode: 'screen' });
 
@@ -405,6 +405,87 @@ export default function App() {
     }
   }, [screenshareSettings, localScreenStream]);
 
+  const onOpenScreenshare = useCallback(async (mode: 'screen' | 'camera') => {
+    const currentMode = useStore.getState().videoStreams[user?.id || 0];
+    
+    if (currentMode === mode && showScreenshare.show && !showScreenshare.targetUserId) {
+      // Stop sharing
+      setShowScreenshare({ show: false, mode: 'screen' });
+      return;
+    }
+
+    // Mutual exclusivity: stop previous if exists
+    if (currentMode) {
+      setShowScreenshare({ show: false, mode: 'screen' });
+      // Small delay to ensure cleanup
+      await new Promise(r => setTimeout(r, 100));
+    }
+    
+    try {
+      const settings = useStore.getState().screenshareSettings;
+      let videoConstraints: any = {
+        displaySurface: 'monitor',
+        frameRate: settings.fps
+      };
+      
+      if (settings.quality === '1080p') {
+        videoConstraints.width = { ideal: 1920 };
+        videoConstraints.height = { ideal: 1080 };
+      } else if (settings.quality === '720p') {
+        videoConstraints.width = { ideal: 1280 };
+        videoConstraints.height = { ideal: 720 };
+      }
+      // If 'source', we don't specify width/height constraints
+
+      const stream = mode === 'screen' 
+        ? await navigator.mediaDevices.getDisplayMedia({
+            video: videoConstraints,
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+              suppressLocalAudioPlayback: false,
+            } as any
+          })
+        : await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: useStore.getState().facingMode,
+              frameRate: 30,
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
+            audio: !useStore.getState().inVoice ? {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            } : false
+          });
+      
+      if (stream) {
+        setLocalScreenStream(stream);
+        socket?.emit('set_stream_id', { type: 'screen', streamId: stream.id });
+        setShowScreenshare({ show: true, mode });
+        stream.getVideoTracks()[0].onended = () => {
+          setLocalScreenStream(null);
+          socket?.emit('set_stream_id', { type: 'screen', streamId: null });
+          setShowScreenshare({ show: false, mode: 'screen' });
+        };
+      }
+    } catch (e: any) {
+      if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') {
+        console.error('Failed to get media', e);
+      }
+    }
+  }, [user, socket, showScreenshare, setLocalScreenStream]);
+
+  useEffect(() => {
+    const currentMode = useStore.getState().videoStreams[user?.id || 0];
+    if (currentMode === 'camera' && showScreenshare.show && !showScreenshare.targetUserId) {
+      // Restart camera with new facingMode
+      onOpenScreenshare('camera');
+    }
+  }, [facingMode, onOpenScreenshare]);
+
   if (!user) {
     return <Auth />;
   }
@@ -412,77 +493,7 @@ export default function App() {
   return (
     <div className="flex h-screen bg-slate-950 text-white overflow-hidden">
       <Sidebar 
-        onOpenScreenshare={async (mode) => {
-          const currentMode = useStore.getState().videoStreams[user?.id || 0];
-          
-          if (currentMode === mode) {
-            // Stop sharing
-            setShowScreenshare({ show: false, mode: 'screen' });
-            return;
-          }
-
-          // Mutual exclusivity: stop previous if exists
-          if (currentMode) {
-            setShowScreenshare({ show: false, mode: 'screen' });
-            // Small delay to ensure cleanup
-            await new Promise(r => setTimeout(r, 100));
-          }
-          
-          try {
-            const settings = useStore.getState().screenshareSettings;
-            let videoConstraints: any = {
-              displaySurface: 'monitor',
-              frameRate: settings.fps
-            };
-            
-            if (settings.quality === '1080p') {
-              videoConstraints.width = { ideal: 1920 };
-              videoConstraints.height = { ideal: 1080 };
-            } else if (settings.quality === '720p') {
-              videoConstraints.width = { ideal: 1280 };
-              videoConstraints.height = { ideal: 720 };
-            }
-            // If 'source', we don't specify width/height constraints
-
-            const stream = mode === 'screen' 
-              ? await navigator.mediaDevices.getDisplayMedia({
-                  video: videoConstraints,
-                  audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
-                    suppressLocalAudioPlayback: false,
-                  } as any
-                })
-              : await navigator.mediaDevices.getUserMedia({
-                  video: {
-                    frameRate: 30,
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                  },
-                  audio: !useStore.getState().inVoice ? {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true
-                  } : false
-                });
-            
-            if (stream) {
-              setLocalScreenStream(stream);
-              socket?.emit('set_stream_id', { type: 'screen', streamId: stream.id });
-              setShowScreenshare({ show: true, mode });
-              stream.getVideoTracks()[0].onended = () => {
-                setLocalScreenStream(null);
-                socket?.emit('set_stream_id', { type: 'screen', streamId: null });
-                setShowScreenshare({ show: false, mode: 'screen' });
-              };
-            }
-          } catch (e: any) {
-            if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') {
-              console.error('Failed to get media', e);
-            }
-          }
-        }} 
+        onOpenScreenshare={onOpenScreenshare} 
         onJoinScreenshare={(userId, mode) => {
           if (!useStore.getState().inVoice) {
             socket?.emit('join_voice');
