@@ -36,7 +36,7 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
     if (videoRef.current.srcObject !== streamToRender) {
       console.log("[Screenshare] Setting srcObject to stream:", streamToRender?.id, "Tracks:", streamToRender?.getTracks().length);
       videoRef.current.srcObject = streamToRender;
-      videoRef.current.muted = true; // Ensure muted for autoplay
+      videoRef.current.muted = !targetUserId; // Mute only if local preview
       if (streamToRender) {
         console.log("[Screenshare] Stream tracks:", streamToRender.getTracks().map(t => t.kind));
         videoRef.current.play().catch(e => {
@@ -198,9 +198,9 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
             <span className="truncate max-w-[150px]">{viewers.length} watching: {viewerNames}</span>
           </div>
         )}
-        <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-contain" />
+        <video ref={videoRef} autoPlay muted={!targetUserId} playsInline className="w-full h-full object-contain" />
         {targetUserId && remoteScreenStreams[targetUserId]?.getAudioTracks().length > 0 && (
-          <audio ref={audioRef} autoPlay />
+          <audio ref={audioRef} autoPlay muted={false} />
         )}
         
         <div className="absolute bottom-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">

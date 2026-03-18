@@ -46,15 +46,29 @@ export function useKrisp(rawStream: MediaStream | null, isKrispEnabled: boolean)
     const initKrisp = async () => {
       try {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioContextClass) throw new Error('AudioContext is not supported');
+        if (!AudioContextClass) {
+          console.error('[Krisp] AudioContext is not supported');
+          setCleanStream(rawStream);
+          return;
+        }
         
         const ctx = new AudioContextClass({ sampleRate: 48000 });
         audioContextRef.current = ctx;
 
-        await ctx.audioWorklet.addModule(krispProcessorUrl);
+        try {
+          await ctx.audioWorklet.addModule(krispProcessorUrl);
+        } catch (e) {
+          console.error('[Krisp] Failed to load audio worklet module:', e);
+          setCleanStream(rawStream);
+          return;
+        }
 
         const response = await fetch(rnnoiseWasmUrl);
-        if (!response.ok) throw new Error('Could not load rnnoise.wasm binary');
+        if (!response.ok) {
+          console.error('[Krisp] Could not load rnnoise.wasm binary');
+          setCleanStream(rawStream);
+          return;
+        }
         const wasmBytes = await response.arrayBuffer();
 
         const source = ctx.createMediaStreamSource(rawStream);
