@@ -189,52 +189,23 @@ export function WebRTCManager() {
 
   const syncTracks = (otherUserId: number, pc: any) => {
     const state = useStore.getState();
-    const streams = [
-      { stream: state.localStream, prefix: 'voice' },
-      { stream: state.localScreenStream, prefix: 'screen' }
-    ];
+    const { localStream, localScreenStream } = state;
 
-    const currentTrackIds = new Set<string>();
-
-    streams.forEach(({ stream, prefix }) => {
-      if (stream) {
-        stream.getTracks().forEach(track => {
-          const key = `${otherUserId}_${prefix}_${track.id}`;
-          currentTrackIds.add(key);
-          if (!localTracks.current[key]) {
-            console.log(`[WebRTC] Adding ${prefix} track ${track.kind} to ${otherUserId}`);
-            const sender = pc.addTrack(track, stream);
-            localTracks.current[key] = sender;
-            
-            // Set bitrate for video
-            if (track.kind === 'video') {
-              const params = sender.getParameters();
-              if (!params.encodings) params.encodings = [{}];
-              if (prefix === 'screen') {
-                params.encodings[0].maxBitrate = 5000000; // 5Mbps for screenshare
-              } else {
-                params.encodings[0].maxBitrate = 2500000; // 2.5Mbps for camera
-              }
-              sender.setParameters(params).catch(console.error);
-            }
-          }
-        });
-      }
-    });
-
-    // Remove tracks that are no longer in local streams
-    Object.keys(localTracks.current).forEach(key => {
-      if (key.startsWith(`${otherUserId}_`) && !currentTrackIds.has(key)) {
-        console.log(`[WebRTC] Removing track ${key} from ${otherUserId}`);
-        const sender = localTracks.current[key];
-        try {
-          pc.removeTrack(sender);
-        } catch (e) {
-          console.error(`[WebRTC] Failed to remove track ${key}:`, e);
+    if (localStream) {
+      localStream.getTracks().forEach(track => {
+        if (!pc.getSenders().find((s: any) => s.track === track)) {
+          pc.addTrack(track, localStream);
         }
-        delete localTracks.current[key];
-      }
-    });
+      });
+    }
+
+    if (localScreenStream) {
+      localScreenStream.getTracks().forEach(track => {
+        if (!pc.getSenders().find((s: any) => s.track === track)) {
+          pc.addTrack(track, localScreenStream);
+        }
+      });
+    }
   };
 
   // Handle incoming signals

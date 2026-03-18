@@ -77,10 +77,10 @@ for (const col of columns) {
   }
 }
 
-const onlineUsers = new Set<number>();
+const onlineUsers = new Map<number, number>(); // userId -> socket count
 const userSockets = new Map<number, Set<string>>();
 const voiceStates = new Map<number, { muted: boolean, deafened: boolean }>();
-const voiceUsers = new Map<number, number>(); // userId -> joinedAt timestamp
+const voiceUsers = new Map<number, { id: number, joinedAt: number }>(); // userId -> {id, joinedAt}
 const videoStreams = new Map<number, 'screen' | 'camera'>();
 const streamViewers = new Map<number, Set<number>>(); // streamUserId -> Set of viewerIds
 const userStreamIds = new Map<number, { voice?: string, screen?: string }>();
@@ -402,17 +402,20 @@ async function startServer() {
   });
 
   io.on('connection', (socket) => {
-    console.log('User connected:', socket.data.user.username);
+    const user = socket.data.user;
+    console.log('User connected:', user.username);
     
-    const userId = socket.data.user.id;
+    const userId = user.id;
     if (!userSockets.has(userId)) {
       userSockets.set(userId, new Set());
-      onlineUsers.add(userId);
+      onlineUsers.set(userId, (onlineUsers.get(userId) || 0) + 1);
       db.prepare('UPDATE users SET online_status = 1 WHERE id = ?').run(userId);
+    } else {
+      onlineUsers.set(userId, (onlineUsers.get(userId) || 0) + 1);
     }
     userSockets.get(userId)!.add(socket.id);
 
-    io.emit('online_users', Array.from(onlineUsers));
+    io.emit('online_users', Array.from(onlineUsers.keys()));
     socket.emit('voice_users', getVoiceUsers());
     socket.emit('voice_states', Array.from(voiceStates.entries()));
     socket.emit('video_streams', Array.from(videoStreams.entries()));
@@ -526,25 +529,14 @@ async function startServer() {
 
     socket.on('join_voice', () => {
       socket.join('voice_general');
-      if (!voiceUsers.has(socket.data.user.id)) {
-        voiceUsers.set(socket.data.user.id, Date.now());
-      }
-      io.emit('voice_users', getVoiceUsers());
+      voiceUsers.set(user.id, { id: user.id, joinedAt: Date.now() });
+      io.emit('voice_users', Array.from(voiceUsers.values())); // GLOBAL EMIT
     });
 
     socket.on('leave_voice', () => {
       socket.leave('voice_general');
-      // Only remove from voiceUsers if no other sockets for this user are in the voice room
-      const room = io.sockets.adapter.rooms.get('voice_general');
-      const userHasOtherSocketsInVoice = Array.from(room || []).some(sid => {
-        const s = io.sockets.sockets.get(sid);
-        return s && s.data.user.id === socket.data.user.id && s.id !== socket.id;
-      });
-
-      if (!userHasOtherSocketsInVoice) {
-        voiceUsers.delete(socket.data.user.id);
-      }
-      io.emit('voice_users', getVoiceUsers());
+      voiceUsers.delete(user.id);
+      io.emit('voice_users', Array.from(voiceUsers.values())); // GLOBAL EMIT
     });
 
     socket.on('voice_chunk', (chunk) => {
@@ -568,19 +560,27 @@ async function startServer() {
     });
 
     socket.on('disconnecting', () => {
-      const userId = socket.data.user.id;
+      voiceUsers.delete(user.id);
+      io.emit('voice_users', Array.from(voiceUsers.values())); // GLOBAL EMIT
+      
+      const currentOnline = onlineUsers.get(user.id) || 0;
+      if (currentOnline <= 1) {
+        onlineUsers.delete(user.id);
+        db.prepare('UPDATE users SET online_status = 0 WHERE id = ?').run(user.id);
+        io.emit('user_left', user.id);
+      } else {
+        onlineUsers.set(user.id, currentOnline - 1);
+      }
+
       const sockets = userSockets.get(userId);
       if (sockets) {
         sockets.delete(socket.id);
         if (sockets.size === 0) {
           userSockets.delete(userId);
-          onlineUsers.delete(userId);
           voiceStates.delete(userId);
-          voiceUsers.delete(userId);
           videoStreams.delete(userId);
           streamViewers.delete(userId);
           userStreamIds.delete(userId);
-          db.prepare('UPDATE users SET online_status = 0 WHERE id = ?').run(userId);
           // Remove user from all streams they were watching
           for (const [sId, viewers] of streamViewers.entries()) {
             if (viewers.has(userId)) {
@@ -590,21 +590,10 @@ async function startServer() {
           }
           io.emit('user_status', { userId, status: 'offline' });
           io.emit('video_stream_update', { userId, mode: null });
-        } else {
-          // Check if user should still be in voice
-          const room = io.sockets.adapter.rooms.get('voice_general');
-          const stillInVoice = Array.from(room || []).some(sid => {
-            const s = io.sockets.sockets.get(sid);
-            return s && s.data.user.id === userId && s.id !== socket.id;
-          });
-          if (!stillInVoice) {
-            voiceUsers.delete(userId);
-          }
         }
       }
       
-      io.emit('online_users', Array.from(onlineUsers));
-      io.emit('voice_users', getVoiceUsers());
+      io.emit('online_users', Array.from(onlineUsers.keys()));
       io.emit('voice_states', Array.from(voiceStates.entries()));
       io.emit('video_streams', Array.from(videoStreams.entries()));
       io.emit('stream_ids', Array.from(userStreamIds.entries()));
@@ -612,7 +601,7 @@ async function startServer() {
   });
 
   function getVoiceUsers() {
-    return Array.from(voiceUsers.entries()).map(([id, joinedAt]) => ({ id, joinedAt }));
+    return Array.from(voiceUsers.values());
   }
 
   // Periodic cleanup of ghost voice users

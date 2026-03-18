@@ -499,21 +499,7 @@ export default function App() {
       // If 'source', we don't specify width/height constraints
 
       const stream = mode === 'screen' 
-        ? await navigator.mediaDevices.getDisplayMedia({
-            video: {
-              ...videoConstraints,
-              displaySurface: 'window'
-            },
-            audio: {
-              echoCancellation: false,
-              noiseSuppression: false,
-              autoGainControl: false,
-              suppressLocalAudioPlayback: false,
-              systemAudio: 'include'
-            } as any,
-            surfaceSwitching: 'include',
-            selfBrowserSurface: 'exclude'
-          } as any)
+        ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
         : await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: useStore.getState().facingMode,

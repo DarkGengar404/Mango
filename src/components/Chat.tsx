@@ -27,21 +27,22 @@ export function Chat() {
 
   useEffect(() => {
     const deriveKey = async () => {
-      if (activeTab === 'main' || !activeTab || !keyPair) return;
-      if (sharedSecrets[activeTab]) return; // Already derived
+      if (!activeTab || activeTab === 'main' || !keyPair) return;
+      if (sharedSecrets[activeTab]) return; // Key already exists
 
       const targetUser = users.find(u => u.id.toString() === activeTab);
-      // CRITICAL FIX: Check both snake_case and camelCase
-      const targetPublicKeyBase64 = targetUser?.public_key || targetUser?.publicKey;
+      const targetPubKey = targetUser?.public_key || targetUser?.publicKey;
 
-      if (targetPublicKeyBase64) {
+      if (targetPubKey) {
         try {
-          const importedPub = await importPublicKey(targetPublicKeyBase64);
+          const importedPub = await importPublicKey(targetPubKey);
           const secret = await deriveSharedSecret(keyPair.privateKey, importedPub);
           setSharedSecret(activeTab, secret);
         } catch (e) {
-          console.error("Failed to derive key", e);
+          console.error("[Crypto] Failed to derive shared secret:", e);
         }
+      } else {
+        console.warn(`[Crypto] Target user ${activeTab} has no public key yet.`);
       }
     };
     deriveKey();
