@@ -28,6 +28,8 @@ class KrispProcessor extends AudioWorkletProcessor {
   private outputReadIndex: number = 0;
   private bufferSize: number = 8192;
 
+  private enabled: boolean = true;
+
   constructor() {
     super();
     this.inputBuffer = new Float32Array(this.bufferSize);
@@ -51,6 +53,8 @@ class KrispProcessor extends AudioWorkletProcessor {
         } catch (e: any) {
           this.port.postMessage({ type: 'error', error: e.message });
         }
+      } else if (event.data.type === 'setEnabled') {
+        this.enabled = event.data.enabled;
       }
     };
   }
@@ -68,8 +72,8 @@ class KrispProcessor extends AudioWorkletProcessor {
       this.inputWriteIndex = (this.inputWriteIndex + 1) % this.bufferSize;
     }
 
-    // 2. If Wasm is ready, process as many 480-sample frames as possible
-    if (this.wasmInstance) {
+    // 2. If Wasm is ready AND enabled, process as many 480-sample frames as possible
+    if (this.wasmInstance && this.enabled) {
       const { exports } = this.wasmInstance;
       const heap = new Float32Array(exports.memory.buffer);
       
@@ -95,12 +99,14 @@ class KrispProcessor extends AudioWorkletProcessor {
         availableInput = (this.inputWriteIndex - this.inputReadIndex + this.bufferSize) % this.bufferSize;
       }
     } else {
-      // Bypass mode: copy input directly to output buffer if model isn't ready
-      for (let i = 0; i < input.length; i++) {
-        this.outputBuffer[this.outputWriteIndex] = input[i];
+      // Bypass mode: copy input directly to output buffer if model isn't ready or disabled
+      let availableInput = (this.inputWriteIndex - this.inputReadIndex + this.bufferSize) % this.bufferSize;
+      while (availableInput > 0) {
+        this.outputBuffer[this.outputWriteIndex] = this.inputBuffer[this.inputReadIndex];
         this.outputWriteIndex = (this.outputWriteIndex + 1) % this.bufferSize;
+        this.inputReadIndex = (this.inputReadIndex + 1) % this.bufferSize;
+        availableInput--;
       }
-      this.inputReadIndex = this.inputWriteIndex;
     }
 
     // 3. Pull processed audio from output ring buffer into the 128-sample output block

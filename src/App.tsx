@@ -19,6 +19,24 @@ export default function App() {
   const [showScreenshare, setShowScreenshare] = useState<{ show: boolean, mode: 'screen' | 'camera', targetUserId?: number }>({ show: false, mode: 'screen' });
 
   useEffect(() => {
+    const restoreSession = async () => {
+      const storedToken = localStorage.getItem('mango_token');
+      if (storedToken) {
+        try {
+          const kp = await loadKeyPair();
+          if (kp) {
+            setKeyPair(kp);
+            useStore.getState().setToken(storedToken);
+          }
+        } catch (e) {
+          console.error('Failed to restore session keys', e);
+        }
+      }
+    };
+    restoreSession();
+  }, []);
+
+  useEffect(() => {
     if (!keyPair) {
       loadKeyPair().then(kp => {
         if (kp) setKeyPair(kp);
@@ -178,6 +196,7 @@ export default function App() {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 20000,
+      transports: ['websocket', 'polling'],
     });
 
     socketInstance.on('connect', () => {
@@ -442,7 +461,7 @@ export default function App() {
     try {
       const settings = useStore.getState().screenshareSettings;
       let videoConstraints: any = {
-        displaySurface: 'monitor',
+        displaySurface: 'window',
         frameRate: settings.fps
       };
       
@@ -465,7 +484,8 @@ export default function App() {
               suppressLocalAudioPlayback: false,
               systemAudio: 'include'
             } as any,
-            preferCurrentTab: false
+            surfaceSwitching: 'include',
+            selfBrowserSurface: 'exclude'
           } as any)
         : await navigator.mediaDevices.getUserMedia({
             video: {

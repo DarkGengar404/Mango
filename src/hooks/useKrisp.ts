@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 
+import krispProcessorUrl from '../lib/krisp-processor.ts?url';
+import rnnoiseWasmUrl from '../lib/rnnoise.wasm?url';
+
 /**
  * useKrisp Hook
  * Manages the neural noise suppression pipeline.
@@ -16,6 +19,12 @@ export function useKrisp(rawStream: MediaStream | null, isKrispEnabled: boolean)
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const destinationNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
 
+  const isKrispEnabledRef = useRef(isKrispEnabled);
+  useEffect(() => {
+    isKrispEnabledRef.current = isKrispEnabled;
+  }, [isKrispEnabled]);
+
+  // Handle initialization and rawStream changes
   useEffect(() => {
     const cleanup = () => {
       if (audioContextRef.current) {
@@ -26,42 +35,28 @@ export function useKrisp(rawStream: MediaStream | null, isKrispEnabled: boolean)
       workletNodeRef.current = null;
       destinationNodeRef.current = null;
       setIsModelLoaded(false);
+      setCleanStream(null);
     };
 
-    // If Krisp is disabled or no stream, bypass and cleanup
-    if (!rawStream || !isKrispEnabled) {
-      setCleanStream(rawStream);
+    if (!rawStream) {
       cleanup();
       return;
     }
 
     const initKrisp = async () => {
       try {
-        // 1. Create AudioContext locked to 48kHz (required by most neural audio models)
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioContextClass) {
-          throw new Error('AudioContext is not supported');
-        }
+        if (!AudioContextClass) throw new Error('AudioContext is not supported');
+        
         const ctx = new AudioContextClass({ sampleRate: 48000 });
         audioContextRef.current = ctx;
 
-        // 2. Load the AudioWorklet module
-        // Using Vite's URL import ensures the worklet is correctly bundled and served
-        const processorUrl = new URL('../lib/krisp-processor.ts', import.meta.url).href;
-        try {
-          await ctx.audioWorklet.addModule(processorUrl);
-        } catch (e) {
-          // If it fails because it's already added, we can ignore or log
-          console.warn('[Krisp] Module might already be added:', e);
-        }
+        await ctx.audioWorklet.addModule(krispProcessorUrl);
 
-        // 3. Fetch the Wasm binary from a reliable CDN
-        const wasmUrl = 'https://unpkg.com/@livekit/krisp-noise-filter@0.4.1/dist/rnnoise.wasm';
-        const response = await fetch(wasmUrl);
-        if (!response.ok) throw new Error('Could not load rnnoise.wasm binary from CDN');
+        const response = await fetch(rnnoiseWasmUrl);
+        if (!response.ok) throw new Error('Could not load rnnoise.wasm binary');
         const wasmBytes = await response.arrayBuffer();
 
-        // 4. Initialize the Pipeline
         const source = ctx.createMediaStreamSource(rawStream);
         const worklet = new AudioWorkletNode(ctx, 'krisp-processor');
         const destination = ctx.createMediaStreamDestination();
@@ -70,15 +65,15 @@ export function useKrisp(rawStream: MediaStream | null, isKrispEnabled: boolean)
           if (event.data.type === 'loaded') {
             setIsModelLoaded(true);
             console.log('[Krisp] Neural network initialized successfully');
+            // Sync initial state using the ref to avoid stale closure
+            worklet.port.postMessage({ type: 'setEnabled', enabled: isKrispEnabledRef.current });
           } else if (event.data.type === 'error') {
             console.error('[Krisp] Runtime error:', event.data.error);
           }
         };
 
-        // Send the Wasm binary to the processor thread
         worklet.port.postMessage({ type: 'init', wasmBytes });
 
-        // Connect nodes
         source.connect(worklet);
         worklet.connect(destination);
 
@@ -86,11 +81,9 @@ export function useKrisp(rawStream: MediaStream | null, isKrispEnabled: boolean)
         workletNodeRef.current = worklet;
         destinationNodeRef.current = destination;
 
-        // Return the cleaned stream
         setCleanStream(destination.stream);
       } catch (e) {
         console.error('[Krisp] Pipeline initialization failed:', e);
-        // Fallback to raw stream on failure
         setCleanStream(rawStream);
       }
     };
@@ -98,7 +91,14 @@ export function useKrisp(rawStream: MediaStream | null, isKrispEnabled: boolean)
     initKrisp();
 
     return cleanup;
-  }, [rawStream, isKrispEnabled]);
+  }, [rawStream]);
 
-  return { cleanStream, isModelLoaded };
+  // Handle real-time toggling
+  useEffect(() => {
+    if (workletNodeRef.current && isModelLoaded) {
+      workletNodeRef.current.port.postMessage({ type: 'setEnabled', enabled: isKrispEnabled });
+    }
+  }, [isKrispEnabled, isModelLoaded]);
+
+  return { cleanStream: cleanStream || rawStream, isModelLoaded };
 }

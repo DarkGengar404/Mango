@@ -63,7 +63,8 @@ const columns = [
   { name: 'glow', type: 'INTEGER DEFAULT 0' },
   { name: 'bio', type: 'TEXT' },
   { name: 'password_reset_token', type: 'TEXT' },
-  { name: 'password_reset_expires', type: 'INTEGER' }
+  { name: 'password_reset_expires', type: 'INTEGER' },
+  { name: 'online_status', type: 'INTEGER DEFAULT 0' }
 ];
 
 const tableInfo = db.prepare("PRAGMA table_info(users)").all() as any[];
@@ -86,12 +87,13 @@ const userStreamIds = new Map<number, { voice?: string, screen?: string }>();
 
 async function startServer() {
   const app = express();
+  app.set('trust proxy', 1);
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: { origin: '*' },
     maxHttpBufferSize: 1e6,
-    pingTimeout: 60000,
-    pingInterval: 25000,
+    pingTimeout: 5000,
+    pingInterval: 2000,
   });
 
   app.use(express.json());
@@ -406,6 +408,7 @@ async function startServer() {
     if (!userSockets.has(userId)) {
       userSockets.set(userId, new Set());
       onlineUsers.add(userId);
+      db.prepare('UPDATE users SET online_status = 1 WHERE id = ?').run(userId);
     }
     userSockets.get(userId)!.add(socket.id);
 
@@ -564,7 +567,7 @@ async function startServer() {
       if (typeof cb === 'function') cb();
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnecting', () => {
       const userId = socket.data.user.id;
       const sockets = userSockets.get(userId);
       if (sockets) {
@@ -577,6 +580,7 @@ async function startServer() {
           videoStreams.delete(userId);
           streamViewers.delete(userId);
           userStreamIds.delete(userId);
+          db.prepare('UPDATE users SET online_status = 0 WHERE id = ?').run(userId);
           // Remove user from all streams they were watching
           for (const [sId, viewers] of streamViewers.entries()) {
             if (viewers.has(userId)) {
@@ -591,7 +595,7 @@ async function startServer() {
           const room = io.sockets.adapter.rooms.get('voice_general');
           const stillInVoice = Array.from(room || []).some(sid => {
             const s = io.sockets.sockets.get(sid);
-            return s && s.data.user.id === userId;
+            return s && s.data.user.id === userId && s.id !== socket.id;
           });
           if (!stillInVoice) {
             voiceUsers.delete(userId);

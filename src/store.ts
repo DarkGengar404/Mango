@@ -84,6 +84,7 @@ interface AppState {
   setLastViewed: (tab: string, timestamp: number) => void;
   setClosedDMs: (userIds: number[]) => void;
   setUser: (user: User | null, token: string | null) => void;
+  setToken: (token: string | null) => void;
   setUsers: (users: User[]) => void;
   addMessage: (msg: Message) => void;
   setActiveTab: (tab: string) => void;
@@ -197,6 +198,11 @@ export const useStore = create<AppState>((set) => ({
     if (token) localStorage.setItem('mango_token', token);
     else localStorage.removeItem('mango_token');
     set({ user, token });
+  },
+  setToken: (token) => {
+    if (token) localStorage.setItem('mango_token', token);
+    else localStorage.removeItem('mango_token');
+    set({ token });
   },
   setUsers: (users) => set({ users: users.map(u => ({ ...u, isAdmin: !!u.is_admin, displayName: u.display_name || u.displayName || u.username, color: u.color, glow: !!u.glow, bio: u.bio })) }),
   addMessage: (msg) => set((state) => {

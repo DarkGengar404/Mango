@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useStore } from '../store';
 import { useKrisp } from '../hooks/useKrisp';
+import audioProcessorUrl from '../lib/audio-processor.js?url';
 
 export function VoiceManager() {
   const { socket, inVoice, user, isMuted, isDeafened, isKrispEnabled, addSpeakingUser, selectedInputDevice, selectedOutputDevice, localVolumes, localMutes, setLocalStream, remoteVoiceStreams, refreshAudioCounter } = useStore();
@@ -166,10 +167,10 @@ export function VoiceManager() {
         if (!audioContextRef.current) return;
         const audioCtx = audioContextRef.current;
         
-      if (!audioWorkletModulesRef.current.has('/audio-processor.js')) {
+      if (!audioWorkletModulesRef.current.has(audioProcessorUrl)) {
         try {
-          await audioCtx.audioWorklet.addModule('/audio-processor.js');
-          audioWorkletModulesRef.current.add('/audio-processor.js');
+          await audioCtx.audioWorklet.addModule(audioProcessorUrl);
+          audioWorkletModulesRef.current.add(audioProcessorUrl);
         } catch (e) {
           console.error('[VoiceManager] Failed to add audio-processor module', e);
         }
