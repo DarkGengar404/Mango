@@ -28,7 +28,7 @@ function ConnectionTime({ joinedAt }: { joinedAt: number }) {
 }
 
 export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreenshare: (mode: 'screen' | 'camera') => void, onJoinScreenshare: (userId: number, mode: 'screen' | 'camera') => void }) {
-  const { user, users, activeTab, setActiveTab, setUser, socket, inVoice, setInVoice, voiceUsers, isMuted, setIsMuted, isDeafened, setIsDeafened, isKrispEnabled, setIsKrispEnabled, ping, speakingUsers, voiceStates, onlineUsers, messages, closedDMs, setClosedDMs, lastViewed, setLastViewed, videoStreams } = useStore();
+  const { user, users, activeTab, setActiveTab, setUser, socket, inVoice, setInVoice, leaveVoice, voiceUsers, isMuted, setIsMuted, isDeafened, setIsDeafened, isKrispEnabled, setIsKrispEnabled, ping, speakingUsers, voiceStates, onlineUsers, messages, closedDMs, setClosedDMs, lastViewed, setLastViewed, videoStreams } = useStore();
   const [showSettings, setShowSettings] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ userId: number, x: number, y: number, isVoice?: boolean } | null>(null);
   const [profileModalUserId, setProfileModalUserId] = useState<number | null>(null);
@@ -48,12 +48,11 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
     }
   };
 
-  const leaveVoice = () => {
+  const handleLeaveVoice = () => {
     if (inVoice) {
-      socket?.emit('leave_voice');
       socket?.emit('play_sound', 'leave_voice');
       sounds.playLeave();
-      setInVoice(false);
+      leaveVoice();
     }
   };
 
@@ -61,10 +60,10 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
   useEffect(() => {
     return () => {
       if (inVoice) {
-        socket?.emit('leave_voice');
+        leaveVoice();
       }
     };
-  }, [inVoice, socket]);
+  }, [inVoice, leaveVoice]);
 
   const dmUsers = React.useMemo(() => {
     if (!user) return [];
@@ -308,7 +307,7 @@ export function Sidebar({ onOpenScreenshare, onJoinScreenshare }: { onOpenScreen
                 {videoStreams[user?.id || 0] === 'camera' ? <X className="w-4 h-4" /> : <Video className="w-4 h-4" />}
               </button>
             </div>
-            <button onClick={leaveVoice} className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors" title="Disconnect">
+            <button onClick={handleLeaveVoice} className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors" title="Disconnect">
               <PhoneOff className="w-4 h-4" />
             </button>
           </div>

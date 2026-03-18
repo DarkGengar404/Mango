@@ -25,6 +25,26 @@ export function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, activeTab]);
 
+  useEffect(() => {
+    if (!keyPair || !users.length || activeTab === 'main') return;
+
+    const deriveForTab = async () => {
+      const otherId = parseInt(activeTab);
+      const otherUser = users.find(u => u.id === otherId);
+      const pubKeyStr = otherUser?.public_key || otherUser?.publicKey;
+      if (pubKeyStr && !sharedSecrets[pubKeyStr]) {
+        try {
+          const pubKey = await importPublicKey(pubKeyStr);
+          const shared = await deriveSharedSecret(keyPair.privateKey, pubKey);
+          setSharedSecret(pubKeyStr, shared);
+        } catch (e) {
+          console.error('Failed to derive key for active tab', otherId, e);
+        }
+      }
+    };
+    deriveForTab();
+  }, [activeTab, users, keyPair, sharedSecrets, setSharedSecret]);
+
   // Derive shared secrets for all users
   const derivedPublicKeys = useRef<Record<number, string>>({});
   const sentMainKeyTo = useRef<Set<number>>(new Set());

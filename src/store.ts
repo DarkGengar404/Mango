@@ -79,6 +79,7 @@ interface AppState {
   setPeerConnection: (userId: number, pc: any | null) => void;
   setUserStreamIds: (ids: Record<number, { voice?: string, screen?: string }>) => void;
   setUserStreamId: (userId: number, type: 'voice' | 'screen', streamId: string | null) => void;
+  leaveVoice: () => void;
   setMessages: (messages: Message[]) => void;
   addMessages: (messages: Message[]) => void;
   setLastViewed: (tab: string, timestamp: number) => void;
@@ -285,6 +286,25 @@ export const useStore = create<AppState>((set) => ({
     else delete newIds[userId][type];
     return { userStreamIds: newIds };
   }),
+  leaveVoice: () => {
+    const { localStream, peerConnections, socket } = useStore.getState();
+    if (localStream) {
+      localStream.getTracks().forEach(t => t.stop());
+    }
+    Object.values(peerConnections).forEach(pc => {
+      if (pc && pc.close) pc.close();
+    });
+    if (socket) {
+      socket.emit('leave_voice');
+    }
+    set({ 
+      inVoice: false, 
+      localStream: null, 
+      peerConnections: {}, 
+      remoteVoiceStreams: {},
+      speakingUsers: []
+    });
+  },
   refreshAudioCounter: 0,
   refreshAudio: () => set((s) => ({ refreshAudioCounter: s.refreshAudioCounter + 1 })),
 }));

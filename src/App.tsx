@@ -18,6 +18,8 @@ export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [showScreenshare, setShowScreenshare] = useState<{ show: boolean, mode: 'screen' | 'camera', targetUserId?: number }>({ show: false, mode: 'screen' });
 
+  const isUnsecure = !window.isSecureContext && window.location.protocol !== 'https:';
+
   useEffect(() => {
     const restoreSession = async () => {
       const storedToken = localStorage.getItem('mango_token');
@@ -35,6 +37,28 @@ export default function App() {
     };
     restoreSession();
   }, []);
+
+  if (isUnsecure) {
+    return (
+      <div className="fixed inset-0 z-[9999] bg-slate-950 flex items-center justify-center p-6 text-center">
+        <div className="max-w-md space-y-4">
+          <div className="w-16 h-16 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+          </div>
+          <h1 className="text-2xl font-bold text-white">Browser Security Block</h1>
+          <p className="text-slate-400">
+            To use Voice, Video, and Encryption on this IP, you must whitelist this address in your browser flags:
+          </p>
+          <div className="bg-slate-900 p-3 rounded font-mono text-sm text-emerald-400 break-all">
+            chrome://flags/#unsafely-treat-insecure-origin-as-secure
+          </div>
+          <p className="text-xs text-slate-500">
+            Add <span className="text-slate-300">{window.location.origin}</span> to the list and restart your browser.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (!keyPair) {
@@ -131,8 +155,8 @@ export default function App() {
 
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (useStore.getState().inVoice && useStore.getState().socket) {
-        useStore.getState().socket?.emit('leave_voice');
+      if (useStore.getState().inVoice) {
+        useStore.getState().leaveVoice();
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -476,7 +500,10 @@ export default function App() {
 
       const stream = mode === 'screen' 
         ? await navigator.mediaDevices.getDisplayMedia({
-            video: videoConstraints,
+            video: {
+              ...videoConstraints,
+              displaySurface: 'window'
+            },
             audio: {
               echoCancellation: false,
               noiseSuppression: false,
