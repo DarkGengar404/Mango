@@ -105,7 +105,8 @@ export default function App() {
               }
             } else if (msg.to !== 'main') {
               const otherId = msg.from === user.id ? parseInt(msg.to) : msg.from;
-              let sharedKey = sharedSecrets[otherId];
+              const otherIdKey = otherId.toString();
+              let sharedKey = sharedSecrets[otherIdKey];
               
               if (!sharedKey && keyPair) {
                 const otherUser = useStore.getState().users.find(u => u.id === otherId);
@@ -114,7 +115,7 @@ export default function App() {
                   try {
                     const pubKey = await importPublicKey(pubKeyStr);
                     sharedKey = await deriveSharedSecret(keyPair.privateKey, pubKey);
-                    useStore.getState().setSharedSecret(otherId, sharedKey);
+                    useStore.getState().setSharedSecret(otherIdKey, sharedKey);
                   } catch (e) {
                     console.error(`[Chat] Failed to derive key for user ${otherId}`, e);
                   }
@@ -260,6 +261,10 @@ export default function App() {
 
     socketInstance.on('voice_users', (users: { id: number, joinedAt: number }[]) => {
       setVoiceUsers(users);
+      const known = new Set(useStore.getState().users.map(u => u.id));
+      if (users.some(u => !known.has(u.id))) {
+        fetchUsers();
+      }
     });
 
     socketInstance.on('online_users', (users: number[]) => {

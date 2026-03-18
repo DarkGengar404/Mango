@@ -38,7 +38,7 @@ interface AppState {
   activeTab: string; // 'main' or userId
   socket: Socket | null;
   keyPair: CryptoKeyPair | null;
-  sharedSecrets: Record<string, CryptoKey>; // publicKey -> AES-GCM key
+  sharedSecrets: Record<string, CryptoKey>; // userId (string) -> AES-GCM key (for DMs + key distribution)
   mainRoomKey: CryptoKey | null;
   voiceUsers: VoiceUser[];
   inVoice: boolean;

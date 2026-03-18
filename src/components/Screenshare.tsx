@@ -83,6 +83,11 @@ export function Screenshare({ onClose, mode, targetUserId }: { onClose: () => vo
     if (audioRef.current && streamToRender && targetUserId) {
       audioRef.current.srcObject = streamToRender;
       audioRef.current.volume = isMuted ? 0 : Math.min(1, volume);
+      // Some browsers won't autoplay audio without an explicit play() attempt.
+      audioRef.current.play().catch((e) => {
+        // Autoplay might be blocked until user interacts with the page.
+        console.warn('[Screenshare] Remote audio play blocked:', e?.message || e);
+      });
     }
   }, [localScreenStream, remoteScreenStreams, targetUserId, volume, isMuted]);
 

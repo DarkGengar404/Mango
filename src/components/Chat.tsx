@@ -28,7 +28,7 @@ export function Chat() {
   useEffect(() => {
     const deriveKey = async () => {
       if (!activeTab || activeTab === 'main' || !keyPair) return;
-      if (sharedSecrets[activeTab]) return; // Key already exists
+      if (sharedSecrets[activeTab]) return; // Key already exists (keyed by userId string)
 
       const targetUser = users.find(u => u.id.toString() === activeTab);
       const targetPubKey = targetUser?.public_key || targetUser?.publicKey;
@@ -57,16 +57,18 @@ export function Chat() {
 
     const deriveKeys = async () => {
       for (const u of users) {
+        if (u.id === user?.id) continue;
         const pubKeyStr = u.public_key || u.publicKey;
         if (!pubKeyStr) continue;
         
-        // Skip if we already derived the key for THIS specific public key string
-        if (sharedSecrets[pubKeyStr]) continue;
+        const userIdKey = u.id.toString();
+        // Skip if we already derived the key for this user id
+        if (sharedSecrets[userIdKey]) continue;
 
         try {
           const pubKey = await importPublicKey(pubKeyStr);
           const shared = await deriveSharedSecret(keyPair.privateKey, pubKey);
-          setSharedSecret(pubKeyStr, shared);
+          setSharedSecret(userIdKey, shared);
           derivedPublicKeys.current[u.id] = pubKeyStr;
           // If the key changed, we need to resend the main key
           sentMainKeyTo.current.delete(u.id);
@@ -110,10 +112,10 @@ export function Chat() {
       const exportedSymKey = await exportSymmetricKey(symKey);
 
       for (const u of users) {
-        const pubKeyStr = u.public_key || u.publicKey;
-        if (u.id === user.id || !pubKeyStr || !sharedSecrets[pubKeyStr] || sentMainKeyTo.current.has(u.id)) continue;
+        const otherIdKey = u.id.toString();
+        if (u.id === user.id || !sharedSecrets[otherIdKey] || sentMainKeyTo.current.has(u.id)) continue;
         try {
-          const { encryptedPayload, iv } = await encryptMessage(sharedSecrets[pubKeyStr], `MAIN_KEY:${exportedSymKey}`);
+          const { encryptedPayload, iv } = await encryptMessage(sharedSecrets[otherIdKey], `MAIN_KEY:${exportedSymKey}`);
           socket.emit('message', { to: u.id, encryptedPayload, iv });
           sentMainKeyTo.current.add(u.id);
         } catch (e) {
@@ -133,11 +135,7 @@ export function Chat() {
     if (activeTab === 'main') {
       keyToUse = mainRoomKey;
     } else {
-      const otherUser = users.find(u => u.id === parseInt(activeTab));
-      const pubKeyStr = otherUser?.public_key || otherUser?.publicKey;
-      if (pubKeyStr) {
-        keyToUse = sharedSecrets[pubKeyStr];
-      }
+      keyToUse = sharedSecrets[activeTab] || null;
     }
 
     if (!keyToUse) {
@@ -163,8 +161,7 @@ export function Chat() {
   });
 
   const otherUserForTab = activeTab !== 'main' ? users.find(u => u.id === parseInt(activeTab)) : null;
-  const pubKeyStrForTab = otherUserForTab?.public_key || otherUserForTab?.publicKey;
-  const currentKey = activeTab === 'main' ? mainRoomKey : (pubKeyStrForTab ? sharedSecrets[pubKeyStrForTab] : null);
+  const currentKey = activeTab === 'main' ? mainRoomKey : (sharedSecrets[activeTab] || null);
   const isKeyReady = !!currentKey;
 
   return (
