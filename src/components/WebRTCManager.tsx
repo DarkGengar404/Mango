@@ -26,6 +26,7 @@ export function WebRTCManager() {
   const localTracks = useRef<Record<string, any>>({}); // pcId_trackId -> sender
   const makingOffer = useRef<Record<number, boolean>>({});
   const ignoreOffer = useRef<Record<number, boolean>>({});
+  const userJoinedAt = useRef<Record<number, number>>({});
   const sdpFilter = (sdp: string) => {
     // Maximize audio quality
     let newSdp = sdp.replace(/a=fmtp:111 (.*)/g, 'a=fmtp:111 $1;maxaveragebitrate=128000;stereo=1;sprop-stereo=1;useinbandfec=1');
@@ -41,6 +42,27 @@ export function WebRTCManager() {
       ...Object.keys(videoStreams).map(id => parseInt(id))
     ]);
     allRelevantUserIds.delete(user.id);
+
+    // Check for rejoined users (joinedAt changed)
+    voiceUsers.forEach(u => {
+      if (u.id === user.id) return;
+      if (userJoinedAt.current[u.id] && userJoinedAt.current[u.id] !== u.joinedAt) {
+        console.log(`[WebRTC] User ${u.id} rejoined, recreating connection`);
+        if (pcs.current[u.id]) {
+          pcs.current[u.id].close();
+          delete pcs.current[u.id];
+          delete makingOffer.current[u.id];
+          delete ignoreOffer.current[u.id];
+          Object.keys(localTracks.current).forEach(key => {
+            if (key.startsWith(`${u.id}_`)) delete localTracks.current[key];
+          });
+          setPeerConnection(u.id, null);
+          setRemoteVoiceStream(u.id, null);
+          setRemoteScreenStream(u.id, null);
+        }
+      }
+      userJoinedAt.current[u.id] = u.joinedAt;
+    });
 
     // Remove stale connections
     Object.keys(pcs.current).forEach(idStr => {
@@ -103,7 +125,11 @@ export function WebRTCManager() {
     pc.oniceconnectionstatechange = () => {
       console.log(`[WebRTC] ICE state to ${otherUserId}: ${pc.iceConnectionState}`);
       if (pc.iceConnectionState === 'failed') {
-        pc.restartIce();
+        try {
+          pc.restartIce();
+        } catch (e) {
+          console.warn(`[WebRTC] Error restarting ICE for ${otherUserId}:`, e);
+        }
       }
     };
 
@@ -127,11 +153,11 @@ export function WebRTCManager() {
       } else if (userIds?.screen === streamId) {
         setRemoteScreenStream(otherUserId, stream);
       } else {
-        // Fallback
-        if (event.track.kind === 'audio') {
-          setRemoteVoiceStream(otherUserId, stream);
-        } else {
+        // Fallback: if the stream has video tracks, it's a screen/camera stream
+        if (stream.getVideoTracks().length > 0) {
           setRemoteScreenStream(otherUserId, stream);
+        } else {
+          setRemoteVoiceStream(otherUserId, stream);
         }
       }
     };
@@ -241,7 +267,18 @@ export function WebRTCManager() {
             console.error('[WebRTC] RTCSessionDescription is not supported');
             return;
           }
-          await pc.setRemoteDescription(new SessionDescription(signal.sdp));
+          
+          const description = new SessionDescription(signal.sdp);
+          if (offerCollision) {
+            // Polite peer rolls back its own offer before accepting the incoming one
+            try {
+              await pc.setLocalDescription({ type: 'rollback' });
+            } catch (e) {
+              console.warn('[WebRTC] Rollback failed or not supported:', e);
+            }
+          }
+          await pc.setRemoteDescription(description);
+          
           if (signal.sdp.type === 'offer') {
             const answer = await pc.createAnswer();
             const modifiedAnswer = {

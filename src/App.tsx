@@ -331,19 +331,18 @@ export default function App() {
         }
       } else if (data.to !== 'main') {
         const otherId = data.from === user?.id ? parseInt(data.to) : data.from;
-        let sharedKey = sharedSecrets[otherId];
+        const otherUser = useStore.getState().users.find(u => u.id === otherId);
+        const pubKeyStr = otherUser?.public_key || otherUser?.publicKey;
         
-        if (!sharedKey && keyPair) {
-          const otherUser = useStore.getState().users.find(u => u.id === otherId);
-          const pubKeyStr = otherUser?.public_key || otherUser?.publicKey;
-          if (pubKeyStr) {
-            try {
-              const pubKey = await importPublicKey(pubKeyStr);
-              sharedKey = await deriveSharedSecret(keyPair.privateKey, pubKey);
-              useStore.getState().setSharedSecret(otherId, sharedKey);
-            } catch (e) {
-              console.error(`[Chat] Failed to derive key for user ${otherId}`, e);
-            }
+        let sharedKey = pubKeyStr ? sharedSecrets[pubKeyStr] : null;
+        
+        if (!sharedKey && keyPair && pubKeyStr) {
+          try {
+            const pubKey = await importPublicKey(pubKeyStr);
+            sharedKey = await deriveSharedSecret(keyPair.privateKey, pubKey);
+            useStore.getState().setSharedSecret(pubKeyStr, sharedKey);
+          } catch (e) {
+            console.error(`[Chat] Failed to derive key for user ${otherId}`, e);
           }
         }
 
@@ -385,6 +384,13 @@ export default function App() {
   useEffect(() => {
     if (!inVoice && showScreenshare.show && !showScreenshare.targetUserId) {
       // If we were sharing our own screen/camera and left voice, stop it
+      const stream = useStore.getState().localScreenStream;
+      const currentSocket = useStore.getState().socket;
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        setLocalScreenStream(null);
+        currentSocket?.emit('set_stream_id', { type: 'screen', streamId: null });
+      }
       setShowScreenshare({ show: false, mode: 'screen' });
     }
   }, [inVoice]);
@@ -412,6 +418,11 @@ export default function App() {
     
     if (!forceRestart && currentMode === mode && showScreenshare.show && !showScreenshare.targetUserId) {
       // Stop sharing
+      if (localScreenStream) {
+        localScreenStream.getTracks().forEach(t => t.stop());
+        setLocalScreenStream(null);
+        socket?.emit('set_stream_id', { type: 'screen', streamId: null });
+      }
       setShowScreenshare({ show: false, mode: 'screen' });
       return;
     }
@@ -420,6 +431,8 @@ export default function App() {
     if (currentMode || forceRestart) {
       if (localScreenStream) {
         localScreenStream.getTracks().forEach(t => t.stop());
+        setLocalScreenStream(null);
+        socket?.emit('set_stream_id', { type: 'screen', streamId: null });
       }
       setShowScreenshare({ show: false, mode: 'screen' });
       // Small delay to ensure cleanup
@@ -488,7 +501,8 @@ export default function App() {
       } else if (e.name === 'NotReadableError') {
         errorMsg = 'Media device is already in use by another application.';
       }
-      alert(errorMsg);
+      // TODO: Implement a custom toast notification instead of alert
+      console.error(errorMsg);
     }
   }, [user, socket, showScreenshare, setLocalScreenStream, localScreenStream]);
 
@@ -551,7 +565,14 @@ export default function App() {
       )}
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
-      {showScreenshare.show && <Screenshare mode={showScreenshare.mode} targetUserId={showScreenshare.targetUserId} onClose={() => setShowScreenshare({ show: false, mode: 'screen' })} />}
+      {showScreenshare.show && <Screenshare mode={showScreenshare.mode} targetUserId={showScreenshare.targetUserId} onClose={() => {
+        if (!showScreenshare.targetUserId && localScreenStream) {
+          localScreenStream.getTracks().forEach(t => t.stop());
+          setLocalScreenStream(null);
+          socket?.emit('set_stream_id', { type: 'screen', streamId: null });
+        }
+        setShowScreenshare({ show: false, mode: 'screen' });
+      }} />}
       <VoiceManager />
       <WebRTCManager />
     </div>

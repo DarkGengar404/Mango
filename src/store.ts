@@ -38,7 +38,7 @@ interface AppState {
   activeTab: string; // 'main' or userId
   socket: Socket | null;
   keyPair: CryptoKeyPair | null;
-  sharedSecrets: Record<number, CryptoKey>; // userId -> AES-GCM key
+  sharedSecrets: Record<string, CryptoKey>; // publicKey -> AES-GCM key
   mainRoomKey: CryptoKey | null;
   voiceUsers: VoiceUser[];
   inVoice: boolean;
@@ -89,7 +89,7 @@ interface AppState {
   setActiveTab: (tab: string) => void;
   setSocket: (socket: Socket | null) => void;
   setKeyPair: (keyPair: CryptoKeyPair | null) => void;
-  setSharedSecret: (userId: number, key: CryptoKey) => void;
+  setSharedSecret: (keyStr: string, key: CryptoKey) => void;
   setMainRoomKey: (key: CryptoKey) => void;
   setVoiceUsers: (users: VoiceUser[]) => void;
   setInVoice: (inVoice: boolean) => void;
@@ -223,7 +223,7 @@ export const useStore = create<AppState>((set) => ({
   }),
   setSocket: (socket) => set({ socket }),
   setKeyPair: (keyPair) => set({ keyPair }),
-  setSharedSecret: (userId, key) => set((state) => ({ sharedSecrets: { ...state.sharedSecrets, [userId]: key } })),
+  setSharedSecret: (keyStr, key) => set((state) => ({ sharedSecrets: { ...state.sharedSecrets, [keyStr]: key } })),
   setMainRoomKey: (mainRoomKey) => set({ mainRoomKey }),
   setVoiceUsers: (voiceUsers) => set({ voiceUsers }),
   setInVoice: (inVoice) => set({ inVoice }),

@@ -38,12 +38,12 @@ export function Chat() {
         if (!pubKeyStr) continue;
         
         // Skip if we already derived the key for THIS specific public key string
-        if (sharedSecrets[u.id] && derivedPublicKeys.current[u.id] === pubKeyStr) continue;
+        if (sharedSecrets[pubKeyStr]) continue;
 
         try {
           const pubKey = await importPublicKey(pubKeyStr);
           const shared = await deriveSharedSecret(keyPair.privateKey, pubKey);
-          setSharedSecret(u.id, shared);
+          setSharedSecret(pubKeyStr, shared);
           derivedPublicKeys.current[u.id] = pubKeyStr;
           // If the key changed, we need to resend the main key
           sentMainKeyTo.current.delete(u.id);
@@ -87,9 +87,10 @@ export function Chat() {
       const exportedSymKey = await exportSymmetricKey(symKey);
 
       for (const u of users) {
-        if (u.id === user.id || !sharedSecrets[u.id] || sentMainKeyTo.current.has(u.id)) continue;
+        const pubKeyStr = u.public_key || u.publicKey;
+        if (u.id === user.id || !pubKeyStr || !sharedSecrets[pubKeyStr] || sentMainKeyTo.current.has(u.id)) continue;
         try {
-          const { encryptedPayload, iv } = await encryptMessage(sharedSecrets[u.id], `MAIN_KEY:${exportedSymKey}`);
+          const { encryptedPayload, iv } = await encryptMessage(sharedSecrets[pubKeyStr], `MAIN_KEY:${exportedSymKey}`);
           socket.emit('message', { to: u.id, encryptedPayload, iv });
           sentMainKeyTo.current.add(u.id);
         } catch (e) {
@@ -109,7 +110,11 @@ export function Chat() {
     if (activeTab === 'main') {
       keyToUse = mainRoomKey;
     } else {
-      keyToUse = sharedSecrets[parseInt(activeTab)];
+      const otherUser = users.find(u => u.id === parseInt(activeTab));
+      const pubKeyStr = otherUser?.public_key || otherUser?.publicKey;
+      if (pubKeyStr) {
+        keyToUse = sharedSecrets[pubKeyStr];
+      }
     }
 
     if (!keyToUse) {
@@ -134,7 +139,9 @@ export function Chat() {
     );
   });
 
-  const currentKey = activeTab === 'main' ? mainRoomKey : sharedSecrets[parseInt(activeTab)];
+  const otherUserForTab = activeTab !== 'main' ? users.find(u => u.id === parseInt(activeTab)) : null;
+  const pubKeyStrForTab = otherUserForTab?.public_key || otherUserForTab?.publicKey;
+  const currentKey = activeTab === 'main' ? mainRoomKey : (pubKeyStrForTab ? sharedSecrets[pubKeyStrForTab] : null);
   const isKeyReady = !!currentKey;
 
   return (
